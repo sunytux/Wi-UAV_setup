@@ -1,0 +1,33 @@
+SBC:
+
+- 	Board: Up Squared (http://www.up-board.org/upsquared/)
+- 	OS: ublinux3.0 "woody". To know current version, type "lsb_release -a".
+	Installation tutorial: https://up-community.org/wiki/Ubilinux
+	To enable support for USB WiFi dongle, see https://forum.up-community.org/discussion/1153/wifi-dongle
+-	username is "beams", password is "azer". When the board and your PC are connected to the WiFi "BEAMS",
+	connection via SSH can be done with "ssh beams@192.168.0.191", add the -X flag to enable graphical session
+
+Software:
+
+-	gnu-radio and uhd built from source following this tutorial: https://kb.ettus.com/Building_and_Installing_the_USRP_Open-Source_Toolchain_(UHD_and_GNU_Radio)_on_Linux
+	Beware, some dependencies at the beginningg of the tutorial cannot be met (Ubuntu != Debian).
+	Just remove them from the apt command, installation goes well anyway.
+-	uhd is built from version 3.10.1.0, check with "git describe --tags".
+-	gnu-radio is built from version 3.7.10.1
+-	Onboard SDK is version 3.3.2-4-g0b080dd. To install DJI SDK, type "git clone https://github.com/dji-sdk/Onboard-SDK.git" then "git checkout tags/3.3.2-4-g0b080dd"
+-	MRAA libs (to control GPIOs) installed according to https://learn.sparkfun.com/tutorials/installing-libmraa-on-ubilinux-for-edison, version v1.8.0-40-g568c077. BEWARE !! It might be needed to modify the source files from mraa before building it, because a link to a driver is not correct. See my GitHub issue: https://github.com/intel-iot-devkit/mraa/issues/867.
+
+
+Drone first start:
+-	Create an account and an app on developer.dji.com
+-	Put application ID and key in the Userconfig.txt file
+- 	Run a sample application of DJI: https://developer.dji.com/onboard-sdk/documentation/quick-start/quick-start.html
+-	the new application needs to be activated, to do so run any sample code (activation is included)
+-	IMPORTANT: the control via the embedded computer won't work unless the Remote Controller has the switch on "F"
+
+Program compilation:
+-	NEED to add the flags "-lpthread -lboost_system -lboost_program_options" to the GCC command (it is done in /main/base-station/CMakeLists.txt) to get UHD and Boost to work
+-	
+
+KNOWN ISSUE(S):
+-	Need to sudo the program to have USB rights
