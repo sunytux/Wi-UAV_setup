@@ -1,5 +1,0 @@
-ID:yourUserIdHere
-KEY:yourKeyHere
-DeviceName: /dev/ttyAMA0
-BaudRate: 115200
-Version: versionM100_31

@@ -1,0 +1,56 @@
+cmake_minimum_required(VERSION 2.8)
+project(djiosdk-base-station)
+
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -pthread -g -O0 -lboost_system -luhd -lboost_program_options -lboost_thread -lmraa")
+
+if(NOT ONBOARDSDK_SOURCE)
+  set(ONBOARDSDK_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/lib/Onboard-SDK")
+endif()
+
+set(EXECUTABLE_OUTPUT_PATH ${PROJECT_BINARY_DIR}/bin)
+option(USE_PRECISION_MISSIONS "Use DJI precision-missions library" OFF)
+set(DISTRO_VERSION UNKNOWN)
+
+add_subdirectory("${ONBOARDSDK_SOURCE}/osdk-core")
+add_subdirectory("${ONBOARDSDK_SOURCE}/osdk-wrapper")
+add_subdirectory("${ONBOARDSDK_SOURCE}/platform/linux")
+
+target_include_directories(djiosdk-core PUBLIC "${ONBOARDSDK_SOURCE}/osdk-core/inc")
+target_include_directories(djiosdk-wrapper PUBLIC "${ONBOARDSDK_SOURCE}/osdk-wrapper/inc")
+target_include_directories(djiosdk-platform PUBLIC "${ONBOARDSDK_SOURCE}/platform/linux/inc")
+
+# include_directories("${ONBOARDSDK_SOURCE}/osdk-core/inc")
+# include_directories("${ONBOARDSDK_SOURCE}/osdk-wrapper/inc")
+# include_directories("${ONBOARDSDK_SOURCE}/platform/linux/inc")
+
+
+FILE(GLOB SOURCE_FILES *.h *.hpp *.cpp)
+
+# set(BLOCKING_LINK_LIBRARIES djiosdk-core djiosdk-platform djiosdk-wrapper)
+add_executable(${PROJECT_NAME} ${SOURCE_FILES})
+
+target_link_libraries(${PROJECT_NAME} 
+    djiosdk-core
+    djiosdk-wrapper
+    djiosdk-platform
+)
+
+# -----------------------------------------------------------------------------
+
+
+
+# if(NOT UHD_USE_STATIC_LIBS)
+#     message(STATUS "Linking against shared UHD library.")
+#     target_link_libraries(${PROJECT_NAME}
+#         ${UHD_LIBRARIES}
+#         ${Boost_LIBRARIES}
+#         ${BLOCKING_LINK_LIBRARIES}
+#     )
+# else(NOT UHD_USE_STATIC_LIBS)
+#     message(STATUS "Linking against static UHD library.")
+#     target_link_libraries(${PROJECT_NAME}
+#         ${UHD_STATIC_LIB_LINK_FLAG}
+#         ${UHD_STATIC_LIB_DEPS}
+#         ${BLOCKING_LINK_LIBRARIES}
+#     )
+# endif(NOT UHD_USE_STATIC_LIBS)
