@@ -1,0 +1,5 @@
+ID:1030635&
+KEY:5cee74b82a5de4966fd57d6e1c45be8097fb6e0c5c04e877fa66fcc2442380d5
+DeviceName: /dev/ttyAMA0
+BaudRate: 115200
+Version: versionM100_31
