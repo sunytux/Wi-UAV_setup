@@ -37,81 +37,70 @@ int routineLocate(CoreAPI*, Flight*);
  * @param[in]   flight
  *              DJI flight object.
  */
-void turnMain(CoreAPI* api, Flight* flight);
-void dataToFile(std::string filename, Flight* flight);
-
-// #define RAD2DEG 57.2957795131f
-// #define DEG2RAD 0.01745329252f
-#define PI 3.14159265359f
-#define deg2rad(x) (((x) *PI) / 180.f)
-#define rad2deg(x) (((x) *180.f) / PI)
-#define MS (1000u)
-
-double constrainAngle(double);
+void droneRotation_thread(CoreAPI* api, Flight* flight);
+void dataToFile_thread(std::string filename, Flight* flight);
+void radioScanning_thread(int config);
+void stopAllThreads();
 
 /* @TODO shitty stuff that need to go! */
 // Those are declared in main.cpp
 extern float measureFromRadioF1;
 extern float measureFromRadioF2;
 extern float measureFromRadio;
+extern int switchState;
 
 bool endFlag;
 bool turnFlag;
-
 extern bool usrpInitializedFlag;
-
-extern int switchState;
-extern bool current_freq;
 
 static CoreAPI* api;
 static Flight* flight;
 
-std::thread* pRadioThread = nullptr;
-std::thread* pDataThread = nullptr;
+std::thread* pRadioScanningThread = nullptr;
+std::thread* pDataToFileThread = nullptr;
 
 int main(int argc, char const* argv[])
 {
-    /* @TODO Check commands before starting*/
+    /* @TODO Check commands before starting */
     /* Error handling */
     if (!argv[1]) {
         std::cout << "No flight routine provided" << std::endl
                   << "Exiting now." << std::endl;
-        return 0;
+        return -1;
     }
-
-    /* Initialise drone */
-    LinuxSerialDevice* serialDevice =
-        new LinuxSerialDevice(UserConfig::deviceName, UserConfig::baudRate);
-    CoreAPI* api = new CoreAPI(serialDevice);
-    Flight* flight = new Flight(api);
-
-    LinuxThread read(api, 2);
-    int setupStatus = setup(serialDevice, api, &read);
-    if (setupStatus == -1) {
-        std::cout << "This program will exit now." << std::endl;
-        return 0;
-    }
-
-
-    /* Monitored Take-off */
-
-    /* @TODO move to define ? */
-    /* Timeout for blocking API calls to wait for ack from aircraft. */
-    /* Do not set to 0.*/
-    int blockingTimeout = 1; // seconds
-    ackReturnData takeoffAck = monitoredTakeoff(api, flight, blockingTimeout);
-    if (takeoffAck.status != 1) {
-        landing(api, flight, blockingTimeout);
-        return 0;
-    }
-    /* @TODO Investigate why this needs to be done AFTER monitoredTakeOff. */
-    api->setBroadcastFreqDefaults(1); // Set broadcast Freq Defaults
-    unsigned short broadcastAck = api->setBroadcastFreqDefaults(100);
-    if(broadcastAck != ACK_SUCCESS){
-        std::cout << "Unable to set Broadcast Freqencies" << std::endl;
-        std::cout << "This program will exit now." << std::endl;;
-        return 0;
-    }
+//    /* Initialise drone */
+//    LinuxSerialDevice* serialDevice =
+//        new LinuxSerialDevice(UserConfig::deviceName, UserConfig::baudRate);
+//    CoreAPI* api = new CoreAPI(serialDevice);
+//    Flight* flight = new Flight(api);
+//
+//    LinuxThread read(api, 2);
+//    int setupStatus = setup(serialDevice, api, &read);
+//    if (setupStatus == -1) {
+//        std::cout << "This program will exit now." << std::endl;
+//        return -1;
+//    }
+//
+//
+//    /* Monitored Take-off */
+//
+//    /* @TODO move to define ? */
+//    /* Timeout for blocking API calls to wait for ack from aircraft. */
+//    /* Do not set to 0.*/
+//    int blockingTimeout = 1; // seconds
+//    ackReturnData takeoffAck = monitoredTakeoff(api, flight, blockingTimeout);
+//    if (takeoffAck.status != 1) {
+//        landing(api, flight, blockingTimeout);
+//        return -1;
+//    }
+//    /* @TODO Investigate why this needs to be done AFTER monitoredTakeOff. */
+//    api->setBroadcastFreqDefaults(1); // Set broadcast Freq Defaults
+//    unsigned short broadcastAck = api->setBroadcastFreqDefaults(100);
+//    if(broadcastAck != ACK_SUCCESS){
+//        std::cout << "Unable to set Broadcast Freqencies" << std::endl;
+//        std::cout << "This program will exit now." << std::endl;;
+//        return -1;
+//    }
 
     endFlag = 0;
 
@@ -119,10 +108,12 @@ int main(int argc, char const* argv[])
         routineSquare(api, flight);
     }
     else if (!strcmp(argv[1], "locate")) {
-        pRadioThread = new std::thread(radioMain, 1);
+        pRadioScanningThread = new std::thread(radioScanning_thread, 1);
         while (!usrpInitializedFlag) {
         }
-        pRadioThread = new std::thread(dataToFile, "out.csv", flight);
+        // pRadioScanningThread =
+        //     new std::thread(dataToFile_thread, "out.csv", flight);
+        while(1){}
         routineLocate(api, flight);
     }
     else {
@@ -134,16 +125,11 @@ int main(int argc, char const* argv[])
     releaseControl(api);
 
     /* Stopping all thread */
-    endFlag = 1;
-    if (pRadioThread != nullptr) {
-        pRadioThread->join();
-    }
-    if (pDataThread != nullptr) {
-        pDataThread->join();
-    }
+    stopAllThreads();
 
     return 0;
 }
+
 
 int routineSquare(CoreAPI* api, Flight* flight)
 {
@@ -170,52 +156,45 @@ int routineSquare(CoreAPI* api, Flight* flight)
 
 int routineLocate(CoreAPI* api, Flight* flight)
 {
-    float radialDist = 10;
-
-    float currentRadioVal;
-    float bestRadioVal = -1;
+    float STEP = 10u;  // m
     
-    int currentSwitchState;
-    int bestSwitchState;
-    
-    float bestYaw;
-
-    float offset = 0.0;
-    float currentYaw;
-    float finalYaw;
-    
-    int weakestFreqIndex;
-
     // @TODO check that
     float ANTENNA_OFFSETS[4] = {
         deg2rad(0), deg2rad(90), deg2rad(180), deg2rad(-90)};
 
+    float initialYaw = normalizedAngle(flight->getYaw());
+    float currentYaw = initialYaw;
+    float previousYaw = initialYaw;
+    
+    float bestRadioVal = -1;
+    float bestYaw;
+    int bestSwitchState;
+
+    float offset = 0.0;
+
     // Need to do the "turn" command in a separate thread because it is
     // blocking
     turnFlag = 1;
-    std::thread turnThread(turnMain, api, flight);
+    std::thread turnThread(droneRotation_thread, api, flight);
 
-    float initialYaw = flight->getYaw();
-    float lastYaw = initialYaw;
-    
     while (offset <= deg2rad(90.)) {
-        currentYaw = constrainAngle(flight->getYaw());
+        currentYaw = normalizedAngle(flight->getYaw());
 
         offset += std::min(
-            std::abs(currentYaw - lastYaw),
+            std::abs(currentYaw - previousYaw),
             std::min(
-                std::abs(deg2rad(360u) - lastYaw + currentYaw),
-                std::abs(deg2rad(360u) - currentYaw + lastYaw)));
+                std::abs(deg2rad(360u) - previousYaw + currentYaw),
+                std::abs(deg2rad(360u) - currentYaw + previousYaw)));
        
-        currentRadioVal = measureFromRadio;
-        currentSwitchState = switchState;
+        float currentRadioVal = measureFromRadio;
+        int currentSwitchState = switchState;
 
         if (currentRadioVal > bestRadioVal && currentRadioVal < 10) {
             bestRadioVal = currentRadioVal;
             bestYaw = currentYaw;
             bestSwitchState = currentSwitchState;
         }
-        lastYaw = currentYaw;
+        previousYaw = currentYaw;
         usleep(25u * MS);
     }
 
@@ -228,23 +207,22 @@ int routineLocate(CoreAPI* api, Flight* flight)
     std::cout << "The corresponding switch state was " << bestSwitchState
               << std::endl;
 
-    finalYaw = ANTENNA_OFFSETS[bestSwitchState];
+    float finalYaw = ANTENNA_OFFSETS[bestSwitchState];
 
     // Head in the computed direction
     int status1 = moveByPositionOffset(api,
                                        flight,
-                                       radialDist * cos(finalYaw),
-                                       radialDist * sin(finalYaw),
-                                       0,
+                                       STEP * cos(finalYaw),
+                                       STEP * sin(finalYaw),
+                                       0.f,
                                        rad2deg(finalYaw), // WARNING deg !!
-                                       30000,
-                                       3,
-                                       30);
+                                       30000u,
+                                       3.f,
+                                       30.f);
     moveWithVelocity(api, flight, 0, 0, 0, 0, 2000u, 0, 0);
-
 }
 
-void turnMain(CoreAPI* api, Flight* flight)
+void droneRotation_thread(CoreAPI* api, Flight* flight)
 {
     float angularSpeed = 5;
     while (turnFlag) {
@@ -253,22 +231,7 @@ void turnMain(CoreAPI* api, Flight* flight)
     }
 }
 
-int main2(int argc, char const* argv[]){
-    char* dummy[0] = {};
-
-    radioMain(1);
-}
-
-double constrainAngle(double x){
-    x = fmod(x, PI);
-
-    if (x < 0)
-        x += PI;
-    
-    return x;
-}
-
-void dataToFile(std::string filename, Flight* flight)
+void dataToFile_thread(std::string filename, Flight* flight)
 {
     std::ofstream outfile;
     outfile.open(filename, std::ios::out);
@@ -305,4 +268,33 @@ void dataToFile(std::string filename, Flight* flight)
     }
 
     outfile.close();
+}
+
+void radioScanning_thread(int config)
+{
+    switch (config) {
+    case 1: {
+        std::cout << "Going for radio1" << std::endl;
+        int status1 = RadioRXStream1();
+        break;
+    }
+    case 2: {
+        std::cout << "Going for radio2" << std::endl;
+        // int status2 = RadioRXStream2(argc, argv);
+        break;
+    }
+    }
+
+}
+
+void stopAllThreads(){
+    endFlag = 1;
+
+    if (pRadioScanningThread != nullptr) {
+        pRadioScanningThread->join();
+    }
+
+    if (pDataToFileThread != nullptr) {
+        pDataToFileThread->join();
+    }
 }

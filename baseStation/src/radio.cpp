@@ -25,6 +25,7 @@
 
 #include "radio.hpp"
 #include "switch.hpp"
+#include "utils.hpp"
 
 static bool stop_signal_called = false;
 void sig_int_handler(int)
@@ -82,7 +83,6 @@ int RadioRXStream1()
                 avg = avg / buff.size();
 
                 measureFromRadio = avg;
-                // std::cout << "RF value: " << measureFromRadio << std::endl;
 
                 /* Error handling */
                 if (md.error_code != uhd::rx_metadata_t::ERROR_CODE_NONE) {
@@ -94,28 +94,12 @@ int RadioRXStream1()
             }
         }
 
+        std::cout << "sw - rval: " << switchState << " - " << measureFromRadio << std::endl;
+
         seconds_in_future = seconds_in_future + MEASURE_PERIOD;
 
         switchNextAntenna(&switchState);
     }
-}
-
-void radioMain(int config)
-{
-    switch (config) {
-    case 1: {
-        std::cout << "Going for radio1" << std::endl;
-        int status1 = RadioRXStream1();
-        break;
-    }
-    case 2: {
-        std::cout << "Going for radio2" << std::endl;
-        // int status2 = RadioRXStream2(argc, argv);
-        break;
-    }
-    }
-
-    // return NULL;
 }
 
 uhd::usrp::multi_usrp::sptr initUsrp(std::string addr)
