@@ -36,7 +36,7 @@ float avg;
 extern bool endFlag;
 float measureFromRadioF1;
 float measureFromRadioF2;
-float measureFromRadio = 0;
+Radio_data_s radioMeasure;
 extern int switchState;
 bool current_freq = 0;
 bool usrpInitializedFlag = false;
@@ -82,7 +82,8 @@ int RadioRXStream1()
                 }
                 avg = avg / buff.size();
 
-                measureFromRadio = avg;
+                radioMeasure.average = avg;
+                radioMeasure.switchState = switchState;
 
                 /* Error handling */
                 if (md.error_code != uhd::rx_metadata_t::ERROR_CODE_NONE) {

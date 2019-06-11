@@ -12,6 +12,14 @@
 #include <uhd/usrp/multi_usrp.hpp>
 
 /**
+ * @brief Single radio measurement.
+ */
+typedef struct {
+    float average = 0;
+    int switchState;
+} Radio_data_s;
+
+/**
  * @brief Initialize USRP.
  *
  * @param[in]   addr

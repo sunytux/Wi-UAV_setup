@@ -44,9 +44,9 @@ void stopAllThreads();
 
 /* @TODO shitty stuff that need to go! */
 // Those are declared in main.cpp
-extern float measureFromRadioF1;
-extern float measureFromRadioF2;
-extern float measureFromRadio;
+// extern float measureFromRadioF1;
+// extern float measureFromRadioF2;
+extern Radio_data_s radioMeasure;
 extern int switchState;
 
 bool endFlag;
@@ -68,39 +68,40 @@ int main(int argc, char const* argv[])
                   << "Exiting now." << std::endl;
         return -1;
     }
-//    /* Initialise drone */
-//    LinuxSerialDevice* serialDevice =
-//        new LinuxSerialDevice(UserConfig::deviceName, UserConfig::baudRate);
-//    CoreAPI* api = new CoreAPI(serialDevice);
-//    Flight* flight = new Flight(api);
-//
-//    LinuxThread read(api, 2);
-//    int setupStatus = setup(serialDevice, api, &read);
-//    if (setupStatus == -1) {
-//        std::cout << "This program will exit now." << std::endl;
-//        return -1;
-//    }
-//
-//
-//    /* Monitored Take-off */
-//
-//    /* @TODO move to define ? */
-//    /* Timeout for blocking API calls to wait for ack from aircraft. */
-//    /* Do not set to 0.*/
-//    int blockingTimeout = 1; // seconds
-//    ackReturnData takeoffAck = monitoredTakeoff(api, flight, blockingTimeout);
-//    if (takeoffAck.status != 1) {
-//        landing(api, flight, blockingTimeout);
-//        return -1;
-//    }
-//    /* @TODO Investigate why this needs to be done AFTER monitoredTakeOff. */
-//    api->setBroadcastFreqDefaults(1); // Set broadcast Freq Defaults
-//    unsigned short broadcastAck = api->setBroadcastFreqDefaults(100);
-//    if(broadcastAck != ACK_SUCCESS){
-//        std::cout << "Unable to set Broadcast Freqencies" << std::endl;
-//        std::cout << "This program will exit now." << std::endl;;
-//        return -1;
-//    }
+
+    /* Initialise drone */
+    LinuxSerialDevice* serialDevice =
+        new LinuxSerialDevice(UserConfig::deviceName, UserConfig::baudRate);
+    CoreAPI* api = new CoreAPI(serialDevice);
+    Flight* flight = new Flight(api);
+
+    LinuxThread read(api, 2);
+    int setupStatus = setup(serialDevice, api, &read);
+    if (setupStatus == -1) {
+        std::cout << "This program will exit now." << std::endl;
+        return -1;
+    }
+
+    /* Monitored Take-off */
+
+    /* @TODO move to define ? */
+    /* Timeout for blocking API calls to wait for ack from aircraft. */
+    /* Do not set to 0.*/
+    int blockingTimeout = 1; // seconds
+    ackReturnData takeoffAck = monitoredTakeoff(api, flight, blockingTimeout);
+    if (takeoffAck.status != 1) {
+        landing(api, flight, blockingTimeout);
+        return -1;
+    }
+    /* @TODO Investigate why this needs to be done AFTER monitoredTakeOff. */
+    api->setBroadcastFreqDefaults(1); // Set broadcast Freq Defaults
+    unsigned short broadcastAck = api->setBroadcastFreqDefaults(100);
+    if (broadcastAck != ACK_SUCCESS) {
+        std::cout << "Unable to set Broadcast Freqencies" << std::endl;
+        std::cout << "This program will exit now." << std::endl;
+        ;
+        return -1;
+    }
 
     endFlag = 0;
 
@@ -111,9 +112,8 @@ int main(int argc, char const* argv[])
         pRadioScanningThread = new std::thread(radioScanning_thread, 1);
         while (!usrpInitializedFlag) {
         }
-        // pRadioScanningThread =
-        //     new std::thread(dataToFile_thread, "out.csv", flight);
-        while(1){}
+        pRadioScanningThread =
+            new std::thread(dataToFile_thread, "out.csv", flight);
         routineLocate(api, flight);
     }
     else {
@@ -166,9 +166,10 @@ int routineLocate(CoreAPI* api, Flight* flight)
     float currentYaw = initialYaw;
     float previousYaw = initialYaw;
     
-    float bestRadioVal = -1;
+    Radio_data_s bestRadio;
+    // float bestRadioVal = -1;
+    // int bestSwitchState;
     float bestYaw;
-    int bestSwitchState;
 
     float offset = 0.0;
 
@@ -177,22 +178,18 @@ int routineLocate(CoreAPI* api, Flight* flight)
     turnFlag = 1;
     std::thread turnThread(droneRotation_thread, api, flight);
 
-    while (offset <= deg2rad(90.)) {
+    while (offset <= std::abs(deg2rad(90.f))) {
+        
         currentYaw = normalizedAngle(flight->getYaw());
+        offset += angularSubstraction(currentYaw, previousYaw);
 
-        offset += std::min(
-            std::abs(currentYaw - previousYaw),
-            std::min(
-                std::abs(deg2rad(360u) - previousYaw + currentYaw),
-                std::abs(deg2rad(360u) - currentYaw + previousYaw)));
-       
-        float currentRadioVal = measureFromRadio;
-        int currentSwitchState = switchState;
+        // float currentRadioVal = radioMeasure.average;
+        // int currentSwitchState = radioMeasure.switchState;
+        Radio_data_s radioMeasure_cpy = radioMeasure;
 
-        if (currentRadioVal > bestRadioVal && currentRadioVal < 10) {
-            bestRadioVal = currentRadioVal;
+        if (radioMeasure_cpy.average > bestRadio.average && radioMeasure_cpy.average < 10) {
+            bestRadio = radioMeasure_cpy;
             bestYaw = currentYaw;
-            bestSwitchState = currentSwitchState;
         }
         previousYaw = currentYaw;
         usleep(25u * MS);
@@ -200,14 +197,15 @@ int routineLocate(CoreAPI* api, Flight* flight)
 
     turnFlag = 0;
     turnThread.join();
+    
+    float finalYaw = bestYaw + ANTENNA_OFFSETS[bestRadio.switchState];
 
     std::cout << "Tour is done !" << std::endl;
     std::cout << "Best yaw was " << rad2deg(bestYaw)
-              << " with a radio value of " << bestRadioVal << std::endl;
-    std::cout << "The corresponding switch state was " << bestSwitchState
+              << " with a radio value of " << bestRadio.average << std::endl;
+    std::cout << "The corresponding switch state was " << bestRadio.switchState
               << std::endl;
-
-    float finalYaw = ANTENNA_OFFSETS[bestSwitchState];
+    std::cout << "Going in direction: " << rad2deg(finalYaw) << std::endl;
 
     // Head in the computed direction
     int status1 = moveByPositionOffset(api,
@@ -259,7 +257,7 @@ void dataToFile_thread(std::string filename, Flight* flight)
                 <<  pos.height      << ","
                 <<  yaw             << ","
                 <<  switchState     << ","
-                <<  measureFromRadio  << std::endl;
+                <<  radioMeasure.average  << std::endl;
     }
     
     if(data_amount > data_threshold)
