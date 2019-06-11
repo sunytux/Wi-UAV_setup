@@ -13,21 +13,7 @@ mraa::Gpio gpio_1(V1_PIN);
 mraa::Gpio gpio_2(V2_PIN);
 mraa::Gpio gpio_3(V3_PIN);
 
-void testSwitch()
-{
-    initSwitchGPIOControl();
-    toggleGPIOs(0, 1);
-
-    while (1) {
-        switchNextAntenna(&switchState);
-        std::cout << "New switchstate is " << switchState
-                  << ", waiting for input to switch" << std::endl;
-        char whatever;
-        std::cin >> whatever;
-    }
-}
-
-int initSwitchGPIOControl()
+int initSwitch()
 {
     // Initial state: listen to RF1
     mraa::Result status;
@@ -71,75 +57,81 @@ int initSwitchGPIOControl()
     return EXIT_SUCCESS;
 }
 
-int toggleGPIOs(bool V2_status, bool V3_status)
+/**
+ * @brief Change RF switch active input for a given antenna.
+ *
+ * Antenna are indexed starting from 0 (i.e. RF1 = 0,... RF4 = 3).
+ *
+ * @param[in]   antenna
+ *              antenna ID.
+ *
+ */
+int switchAntenna(int antenna)
 {
+    /*
+     * Truth table of the RF switch:
+     * | V1 | V2 | V3 | Active Input
+     * |____|____|____|_____________
+     * |    |    |    |
+     * | Lo | Lo | Lo |   RF4
+     * | Lo | Lo | Hi |   RF1
+     * | Lo | Hi | Lo |   RF2
+     * | Lo | Hi | Hi |   RF3
+     * | Hi | Lo | Lo |   RF4
+     * | Hi | Lo | Hi |   All Off
+     * | Hi | Hi | Hi |   All Off
+     * | Hi | Hi | Hi |   Unsupported
+     *
+     * All control have 100k internal pull down !
+     *
+     * With V1 always grounded, two pin control is enough -> 2-bit state
+     * variable. 0b01 means V2 low, V3 high -> RF1 active 0b11 means V2 high,V3
+     * high -> RF3 active, etc.
+     */
+    bool v2;
+    bool v3;
+
+    switch (antenna) {
+    case 0: /* RF1 */
+        v2 = 0;
+        v3 = 1;
+        break;
+    case 1: /* RF2 */
+        v2 = 1;
+        v3 = 0;
+        break;
+
+    case 2: /* RF3 */
+        v2 = 1;
+        v3 = 1;
+        break;
+
+    case 3: /* RF4 */
+        v2 = 0;
+        v3 = 0;
+        break;
+    }
+    
     mraa::Result status;
 
-    status = gpio_2.write(V2_status);
+    status = gpio_2.write(v2);
     if (status != mraa::SUCCESS) {
         printError(status);
         return EXIT_FAILURE;
     }
 
-    status = gpio_3.write(V3_status);
+    status = gpio_3.write(v3);
     if (status != mraa::SUCCESS) {
         printError(status);
         return EXIT_FAILURE;
     }
 
     return EXIT_SUCCESS;
+
 }
 
 void switchNextAntenna(int* currentState)
 {
-    /*
-    Truth table of the RF switch:
-    | V1 | V2 | V3 | Active Input
-    |____|____|____|_____________
-    |    |    |    |
-    | Lo | Lo | Lo |   RF4
-    | Lo | Lo | Hi |   RF1
-    | Lo | Hi | Lo |   RF2
-    | Lo | Hi | Hi |   RF3
-    | Hi | Lo | Lo |   RF4
-    | Hi | Lo | Hi |   All Off
-    | Hi | Hi | Hi |   All Off
-    | Hi | Hi | Hi |   Unsupported
-
-    All control have 100k internal pull down !
-
-    With V1 always grounded, two pin control is enough -> 2-bit state variable.
-    0b01 means V2 low, V3 high -> RF1 active
-    0b11 means V2 high, V3 high -> RF3 active, etc.
-    */
-
-    switch (*currentState) {
-    // 0b01 = 1; RF1 active, go to RF2
-    case 1:
-        // std::cout << "Switching from RF1 to RF2" << std::endl;
-        toggleGPIOs(1, 0);
-        *currentState = 2;
-        break;
-
-    // 0b10 = 2; RF2 active, go to RF3
-    case 2:
-        // std::cout << "Switching from RF2 to RF3" << std::endl;
-        toggleGPIOs(1, 1);
-        *currentState = 3;
-        break;
-
-    // 0b11 = 3; RF3 active, go to RF4
-    case 3:
-        // std::cout << "Switching from RF3 to RF4" << std::endl;
-        toggleGPIOs(0, 0);
-        *currentState = 0;
-        break;
-
-    // 0b00 = 0; RF4 active, go to RF1
-    case 0:
-        // std::cout << "Switching from RF4 to RF1" << std::endl;
-        toggleGPIOs(0, 1);
-        *currentState = 1;
-        break;
-    }
+    *currentState = (*currentState + 1) % 4;
+    switchAntenna(*currentState);
 }

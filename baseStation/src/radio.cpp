@@ -61,8 +61,7 @@ int RadioRXStream1()
     std::vector<std::complex<float>> buff(rx_stream->get_max_num_samps());
 
     /* Switch Setup */
-    initSwitchGPIOControl();
-    toggleGPIOs(0, 1);
+    initSwitch();
 
     while (!endFlag) {
         stream_cmd.time_spec = uhd::time_spec_t(seconds_in_future);
