@@ -15,8 +15,19 @@
  * @brief Normalize angle between -PI and +PI.
  *
  * @param[in]   x
- *              Angle in radian
+ *              Angle in radian            
+ *
  */
 double normalizedAngle(double x);
+
+/**
+ * @brief Compute the difference between two  angles.
+ *
+ * @param[in]   a and b
+ *              Angles in radian
+ *
+ * @return angle in radian between -PI and +PI.
+ */
+double angularSubstraction(double a, double b);
 
 #endif // UTILS_HPP
