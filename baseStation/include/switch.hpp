@@ -8,6 +8,6 @@
 #define V3_PIN 16   // Corresponds to R-pi PWM3
 
 int initSwitch();
-void switchNextAntenna(int*);
+void switchNextAntenna();
 
 #endif // SWITCH_HPP

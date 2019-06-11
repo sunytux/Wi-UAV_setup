@@ -130,8 +130,8 @@ int switchAntenna(int antenna)
 
 }
 
-void switchNextAntenna(int* currentState)
+void switchNextAntenna()
 {
-    *currentState = (*currentState + 1) % 4;
-    switchAntenna(*currentState);
+    switchState = (switchState + 1) % 4;
+    switchAntenna(switchState);
 }

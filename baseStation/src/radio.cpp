@@ -94,11 +94,9 @@ int RadioRXStream1()
             }
         }
 
-        std::cout << "sw - rval: " << switchState << " - " << measureFromRadio << std::endl;
-
         seconds_in_future = seconds_in_future + MEASURE_PERIOD;
 
-        switchNextAntenna(&switchState);
+        switchNextAntenna();
     }
 }
 
