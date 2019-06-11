@@ -19,6 +19,7 @@
 
 /* @TODO Manage includes */
 #include "radio.hpp"
+#include "utils.hpp"
 
 using namespace DJI::onboardSDK;
 
