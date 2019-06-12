@@ -75,7 +75,6 @@ int main(int argc, char const* argv[])
         return ERROR_STATUS;
     }
 
-
     /* Take-off */
     int takeoffStatus = initDroneAndTakeoff();
     if (takeoffStatus != SUCCESS_STATUS) {
@@ -148,6 +147,96 @@ void landDroneAndRealeControl(){
     landing(api, flight, 10u);
     releaseControl(api);
 }
+
+
+/***********************************************************************
+ * Threads
+ **********************************************************************/
+void startAllThreads(){
+    endFlag = 0;
+    pRadioScanningThread = new std::thread(radioScanning_thread, 1);
+    while (!usrpInitializedFlag) {
+    }
+    pDataToFileThread = new std::thread(dataToFile_thread, "out.csv", flight);
+}
+
+void stopAllThreads(){
+    endFlag = 1;
+
+    if (pRadioScanningThread != nullptr) {
+        pRadioScanningThread->join();
+    }
+
+    if (pDataToFileThread != nullptr) {
+        pDataToFileThread->join();
+    }
+}
+
+void droneRotation_thread(CoreAPI* api, Flight* flight)
+{
+    float angularSpeed = 5;
+    while (turnFlag) {
+        int status1 =
+            moveWithVelocity(api, flight, 0, 0, 0, angularSpeed, 1500, 3, 0.1);
+    }
+}
+
+void dataToFile_thread(std::string filename, Flight* flight)
+{
+    std::ofstream outfile;
+    outfile.open(filename, std::ios::out);
+    // Change precision of floats to print
+    outfile.precision(10);
+    outfile.setf(std::ios::fixed);
+    outfile.setf(std::ios::showpoint);   
+    outfile << "Latitude, Longitude, Altitude, Height, Yaw, SwitchState, RadioValue" << std::endl;
+
+    PositionData pos;
+    float yaw;
+    int data_amount = 0;
+    int data_threshold = 5000;
+
+    while(!endFlag && data_amount < data_threshold)
+    {
+    data_amount++;
+        usleep(25000);
+        pos = flight -> getPosition();
+        yaw = flight -> getYaw();     // IN RAD !
+
+        outfile <<  pos.latitude    << ","
+                <<  pos.longitude   << ","
+                <<  pos.altitude    << ","
+                <<  pos.height      << ","
+                <<  yaw             << ","
+                <<  switchState     << ","
+                <<  radioMeasure.average  << std::endl;
+    }
+    
+    if(data_amount > data_threshold)
+    {
+       std::cout << "Threshold exceeded, expect incomplete data." << std::endl;
+    }
+
+    outfile.close();
+}
+
+void radioScanning_thread(int config)
+{
+    switch (config) {
+    case 1: {
+        std::cout << "Going for radio1" << std::endl;
+        int status1 = RadioRXStream1();
+        break;
+    }
+    case 2: {
+        std::cout << "Going for radio2" << std::endl;
+        // int status2 = RadioRXStream2(argc, argv);
+        break;
+    }
+    }
+
+}
+
 
 /***********************************************************************
  * Flight routines
@@ -244,91 +333,3 @@ int routineLocate(CoreAPI* api, Flight* flight)
     moveWithVelocity(api, flight, 0, 0, 0, 0, 2000u, 0, 0);
 }
 
-
-/***********************************************************************
- * Threads
- **********************************************************************/
-void startAllThreads(){
-    endFlag = 0;
-    pRadioScanningThread = new std::thread(radioScanning_thread, 1);
-    while (!usrpInitializedFlag) {
-    }
-    pDataToFileThread = new std::thread(dataToFile_thread, "out.csv", flight);
-}
-
-void stopAllThreads(){
-    endFlag = 1;
-
-    if (pRadioScanningThread != nullptr) {
-        pRadioScanningThread->join();
-    }
-
-    if (pDataToFileThread != nullptr) {
-        pDataToFileThread->join();
-    }
-}
-
-void droneRotation_thread(CoreAPI* api, Flight* flight)
-{
-    float angularSpeed = 5;
-    while (turnFlag) {
-        int status1 =
-            moveWithVelocity(api, flight, 0, 0, 0, angularSpeed, 1500, 3, 0.1);
-    }
-}
-
-void dataToFile_thread(std::string filename, Flight* flight)
-{
-    std::ofstream outfile;
-    outfile.open(filename, std::ios::out);
-    // Change precision of floats to print
-    outfile.precision(10);
-    outfile.setf(std::ios::fixed);
-    outfile.setf(std::ios::showpoint);   
-    outfile << "Latitude, Longitude, Altitude, Height, Yaw, SwitchState, RadioValue" << std::endl;
-
-    PositionData pos;
-    float yaw;
-    int data_amount = 0;
-    int data_threshold = 5000;
-
-    while(!endFlag && data_amount < data_threshold)
-    {
-    data_amount++;
-        usleep(25000);
-        pos = flight -> getPosition();
-        yaw = flight -> getYaw();     // IN RAD !
-
-        outfile <<  pos.latitude    << ","
-                <<  pos.longitude   << ","
-                <<  pos.altitude    << ","
-                <<  pos.height      << ","
-                <<  yaw             << ","
-                <<  switchState     << ","
-                <<  radioMeasure.average  << std::endl;
-    }
-    
-    if(data_amount > data_threshold)
-    {
-       std::cout << "Threshold exceeded, expect incomplete data." << std::endl;
-    }
-
-    outfile.close();
-}
-
-void radioScanning_thread(int config)
-{
-    switch (config) {
-    case 1: {
-        std::cout << "Going for radio1" << std::endl;
-        int status1 = RadioRXStream1();
-        break;
-    }
-    case 2: {
-        std::cout << "Going for radio2" << std::endl;
-        // int status2 = RadioRXStream2(argc, argv);
-        break;
-    }
-    }
-
-}
