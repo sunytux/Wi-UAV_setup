@@ -11,6 +11,9 @@
 #define deg2rad(x) (((x) *PI) / 180.f)
 #define rad2deg(x) (((x) *180.f) / PI)
 
+#define ERROR_STATUS -1
+#define SUCCESS_STATUS 0
+
 /**
  * @brief Normalize angle between -PI and +PI.
  *

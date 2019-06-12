@@ -42,6 +42,8 @@ void droneRotation_thread(CoreAPI* api, Flight* flight);
 void dataToFile_thread(std::string filename, Flight* flight);
 void radioScanning_thread(int config);
 void stopAllThreads();
+int initDroneAndTakeoff();
+void landDroneAndRealeControl();
 
 /* @TODO shitty stuff that need to go! */
 // Those are declared in main.cpp
@@ -54,6 +56,8 @@ bool endFlag;
 bool turnFlag;
 extern bool usrpInitializedFlag;
 
+/* @TODO make it not global. */ 
+/* difficulties when passing those in argument in initDroneAndTakeoff() */
 static CoreAPI* api;
 static Flight* flight;
 
@@ -67,41 +71,12 @@ int main(int argc, char const* argv[])
     if (!argv[1]) {
         std::cout << "No flight routine provided" << std::endl
                   << "Exiting now." << std::endl;
-        return -1;
+        return ERROR_STATUS;
     }
 
-    /* Initialise drone */
-    LinuxSerialDevice* serialDevice =
-        new LinuxSerialDevice(UserConfig::deviceName, UserConfig::baudRate);
-    CoreAPI* api = new CoreAPI(serialDevice);
-    Flight* flight = new Flight(api);
-
-    LinuxThread read(api, 2);
-    int setupStatus = setup(serialDevice, api, &read);
-    if (setupStatus == -1) {
-        std::cout << "This program will exit now." << std::endl;
-        return -1;
-    }
-
-    /* Monitored Take-off */
-
-    /* @TODO move to define ? */
-    /* Timeout for blocking API calls to wait for ack from aircraft. */
-    /* Do not set to 0.*/
-    int blockingTimeout = 1; // seconds
-    ackReturnData takeoffAck = monitoredTakeoff(api, flight, blockingTimeout);
-    if (takeoffAck.status != 1) {
-        landing(api, flight, blockingTimeout);
-        return -1;
-    }
-    /* @TODO Investigate why this needs to be done AFTER monitoredTakeOff. */
-    api->setBroadcastFreqDefaults(1); // Set broadcast Freq Defaults
-    unsigned short broadcastAck = api->setBroadcastFreqDefaults(100);
-    if (broadcastAck != ACK_SUCCESS) {
-        std::cout << "Unable to set Broadcast Freqencies" << std::endl;
-        std::cout << "This program will exit now." << std::endl;
-        ;
-        return -1;
+    int takeoffStatus = initDroneAndTakeoff();
+    if (takeoffStatus != SUCCESS_STATUS) {
+        return ERROR_STATUS;
     }
 
     endFlag = 0;
@@ -122,15 +97,58 @@ int main(int argc, char const* argv[])
     }
 
     /* Drone landing */
-    landing(api, flight, 10u);
-    releaseControl(api);
+    landDroneAndRealeControl();
 
     /* Stopping all thread */
     stopAllThreads();
 
-    return 0;
+    return SUCCESS_STATUS;
 }
 
+
+int initDroneAndTakeoff(){
+
+    /* Initialise drone */
+    LinuxSerialDevice* serialDevice =
+        new LinuxSerialDevice(UserConfig::deviceName, UserConfig::baudRate);
+    api = new CoreAPI(serialDevice);
+    flight = new Flight(api);
+
+    LinuxThread read(api, 2);
+    int setupStatus = setup(serialDevice, api, &read);
+    if (setupStatus == -1) {
+        std::cout << "Unable to setup drivers." << std::endl;
+        std::cout << "Exiting now." << std::endl;
+        return ERROR_STATUS;
+    }
+
+    /* Monitored Take-off */
+    int blockingTimeout = 10; /* in seconds */
+    /* Timeout for blocking API calls to wait for ack from aircraft. */
+    /* Do not set to 0.*/
+    ackReturnData takeoffAck = monitoredTakeoff(api, flight, blockingTimeout);
+    if (takeoffAck.status != 1) {
+        std::cout << "Unable to take-off, landing started..." << std::endl;
+        landing(api, flight, blockingTimeout);
+        std::cout << "Exiting now." << std::endl;
+        return ERROR_STATUS;
+    }
+    /* @TODO Investigate why this needs to be done AFTER monitoredTakeOff. */
+    unsigned short broadcastAck =
+        api->setBroadcastFreqDefaults(blockingTimeout);
+    if (broadcastAck != ACK_SUCCESS) {
+        std::cout << "Unable to set Broadcast Freqencies" << std::endl;
+        std::cout << "Exiting now." << std::endl;
+        return -1;
+    }
+
+    return SUCCESS_STATUS;
+}
+
+void landDroneAndRealeControl(){
+    landing(api, flight, 10u);
+    releaseControl(api);
+}
 
 int routineSquare(CoreAPI* api, Flight* flight)
 {
