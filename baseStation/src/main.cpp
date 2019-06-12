@@ -42,6 +42,7 @@ void droneRotation_thread(CoreAPI* api, Flight* flight);
 void dataToFile_thread(std::string filename, Flight* flight);
 void radioScanning_thread(int config);
 void stopAllThreads();
+void startAllThreads();
 int initDroneAndTakeoff();
 void landDroneAndRealeControl();
 
@@ -74,22 +75,20 @@ int main(int argc, char const* argv[])
         return ERROR_STATUS;
     }
 
+
+    /* Take-off */
     int takeoffStatus = initDroneAndTakeoff();
     if (takeoffStatus != SUCCESS_STATUS) {
         return ERROR_STATUS;
     }
 
-    endFlag = 0;
+    /* Start all threads */
+    startAllThreads();
 
     if (!strcmp(argv[1], "square")) {
         routineSquare(api, flight);
     }
     else if (!strcmp(argv[1], "locate")) {
-        pRadioScanningThread = new std::thread(radioScanning_thread, 1);
-        while (!usrpInitializedFlag) {
-        }
-        pRadioScanningThread =
-            new std::thread(dataToFile_thread, "out.csv", flight);
         routineLocate(api, flight);
     }
     else {
@@ -99,7 +98,7 @@ int main(int argc, char const* argv[])
     /* Drone landing */
     landDroneAndRealeControl();
 
-    /* Stopping all thread */
+    /* Stopping all threads */
     stopAllThreads();
 
     return SUCCESS_STATUS;
@@ -150,6 +149,9 @@ void landDroneAndRealeControl(){
     releaseControl(api);
 }
 
+/***********************************************************************
+ * Flight routines
+ **********************************************************************/
 int routineSquare(CoreAPI* api, Flight* flight)
 {
     int altitude = 6;
@@ -175,7 +177,7 @@ int routineSquare(CoreAPI* api, Flight* flight)
 
 int routineLocate(CoreAPI* api, Flight* flight)
 {
-    float STEP = 10u;  // m
+    float STEP = 10u;  /* in m */
     
     // @TODO check that
     float ANTENNA_OFFSETS[4] = {
@@ -242,6 +244,30 @@ int routineLocate(CoreAPI* api, Flight* flight)
     moveWithVelocity(api, flight, 0, 0, 0, 0, 2000u, 0, 0);
 }
 
+
+/***********************************************************************
+ * Threads
+ **********************************************************************/
+void startAllThreads(){
+    endFlag = 0;
+    pRadioScanningThread = new std::thread(radioScanning_thread, 1);
+    while (!usrpInitializedFlag) {
+    }
+    pDataToFileThread = new std::thread(dataToFile_thread, "out.csv", flight);
+}
+
+void stopAllThreads(){
+    endFlag = 1;
+
+    if (pRadioScanningThread != nullptr) {
+        pRadioScanningThread->join();
+    }
+
+    if (pDataToFileThread != nullptr) {
+        pDataToFileThread->join();
+    }
+}
+
 void droneRotation_thread(CoreAPI* api, Flight* flight)
 {
     float angularSpeed = 5;
@@ -305,16 +331,4 @@ void radioScanning_thread(int config)
     }
     }
 
-}
-
-void stopAllThreads(){
-    endFlag = 1;
-
-    if (pRadioScanningThread != nullptr) {
-        pRadioScanningThread->join();
-    }
-
-    if (pDataToFileThread != nullptr) {
-        pDataToFileThread->join();
-    }
 }
