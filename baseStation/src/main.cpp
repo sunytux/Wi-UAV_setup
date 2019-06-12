@@ -39,7 +39,8 @@ int routineLocate(CoreAPI*, Flight*);
  *              DJI flight object.
  */
 void droneRotation_thread(CoreAPI* api, Flight* flight);
-void dataToFile_thread(std::string filename, Flight* flight);
+void safetyMonitor_thread(CoreAPI* api, Flight* flight);
+void dataToFile_thread(Flight* flight);
 void radioScanning_thread(int config);
 void stopAllThreads();
 void startAllThreads();
@@ -64,6 +65,7 @@ static Flight* flight;
 
 std::thread* pRadioScanningThread = nullptr;
 std::thread* pDataToFileThread = nullptr;
+std::thread* pSafetyMonitorThread = nullptr;
 
 int main(int argc, char const* argv[])
 {
@@ -157,7 +159,8 @@ void startAllThreads(){
     pRadioScanningThread = new std::thread(radioScanning_thread, 1);
     while (!usrpInitializedFlag) {
     }
-    pDataToFileThread = new std::thread(dataToFile_thread, "out.csv", flight);
+    pDataToFileThread = new std::thread(dataToFile_thread, flight);
+    pSafetyMonitorThread = new std::thread(safetyMonitor_thread, api, flight);
 }
 
 void stopAllThreads(){
@@ -170,6 +173,10 @@ void stopAllThreads(){
     if (pDataToFileThread != nullptr) {
         pDataToFileThread->join();
     }
+    
+    if (pSafetyMonitorThread != nullptr) {
+        pSafetyMonitorThread->join();
+    }
 }
 
 void droneRotation_thread(CoreAPI* api, Flight* flight)
@@ -181,10 +188,10 @@ void droneRotation_thread(CoreAPI* api, Flight* flight)
     }
 }
 
-void dataToFile_thread(std::string filename, Flight* flight)
+void dataToFile_thread(Flight* flight)
 {
     std::ofstream outfile;
-    outfile.open(filename, std::ios::out);
+    outfile.open(DATA_FILE, std::ios::out);
     // Change precision of floats to print
     outfile.precision(10);
     outfile.setf(std::ios::fixed);
@@ -199,7 +206,7 @@ void dataToFile_thread(std::string filename, Flight* flight)
     while(!endFlag && data_amount < data_threshold)
     {
     data_amount++;
-        usleep(25000);
+        usleep(DATA_THREAD_PERIOD);
         pos = flight -> getPosition();
         yaw = flight -> getYaw();     // IN RAD !
 
@@ -234,9 +241,34 @@ void radioScanning_thread(int config)
         break;
     }
     }
-
 }
 
+void safetyMonitor_thread(CoreAPI* api, Flight* flight)
+{
+    while (!endFlag) {
+        usleep(SAFETY_THREAD_PERIOD);
+        VelocityData curVelocity = api->getBroadcastData().v;
+        PositionData pos = flight->getPosition();
+
+        if (curVelocity.x > VOLICTY_THRESHOLD
+            || curVelocity.y > VOLICTY_THRESHOLD
+            || curVelocity.z > VOLICTY_THRESHOLD) {
+            std::cout << "Velocity exceeded threshold ! Emergency release of "
+                         "the control."
+                      << std::endl;
+            ackReturnData releaseControlStatus = releaseControl(api);
+            endFlag = 1;
+        }
+
+        if (pos.height > ALTITUDE_THRESHOLD) {
+            std::cout << "Height exceeded threshold ! Emergency release of the "
+                         "control."
+                      << std::endl;
+            ackReturnData releaseControlStatus = releaseControl(api);
+            endFlag = 1;
+        }
+    }
+}
 
 /***********************************************************************
  * Flight routines

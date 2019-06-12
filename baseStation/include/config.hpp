@@ -18,4 +18,13 @@
 #define SDR_CLOCK_SOURCE ("internal")
 #define MAX_RECORDED_SAMPLES (1000u)
 
+/* Safety */
+#define VOLICTY_THRESHOLD (3.f) /* in m/s */
+#define ALTITUDE_THRESHOLD (4.f) /* in meters */
+#define SAFETY_THREAD_PERIOD (100u * MS)
+
+/* Data record */
+#define DATA_FILE ("out.csv")
+#define DATA_THREAD_PERIOD (25 * MS)
+
 #endif // CONFIG_HPP
