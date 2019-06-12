@@ -20,6 +20,7 @@
 /* @TODO Manage includes */
 #include "radio.hpp"
 #include "utils.hpp"
+#include "config.hpp"
 
 using namespace DJI::onboardSDK;
 
@@ -160,7 +161,10 @@ int routineLocate(CoreAPI* api, Flight* flight)
     
     // @TODO check that
     float ANTENNA_OFFSETS[4] = {
-        deg2rad(0), deg2rad(90), deg2rad(180), deg2rad(-90)};
+        OFFSET_RF1,
+        OFFSET_RF2,
+        OFFSET_RF3,
+        OFFSET_RF4};
 
     float initialYaw = normalizedAngle(flight->getYaw());
     float currentYaw = initialYaw;
