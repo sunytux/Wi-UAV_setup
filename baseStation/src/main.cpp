@@ -105,9 +105,8 @@ int main(int argc, char const* argv[])
     return SUCCESS_STATUS;
 }
 
-
-int initDroneAndTakeoff(){
-
+int initDroneAndTakeoff()
+{
     /* Initialise drone */
     LinuxSerialDevice* serialDevice =
         new LinuxSerialDevice(UserConfig::deviceName, UserConfig::baudRate);
@@ -139,22 +138,23 @@ int initDroneAndTakeoff(){
     if (broadcastAck != ACK_SUCCESS) {
         std::cout << "Unable to set Broadcast Freqencies" << std::endl;
         std::cout << "Exiting now." << std::endl;
-        return -1;
+        return ERROR_STATUS;
     }
 
     return SUCCESS_STATUS;
 }
 
-void landDroneAndRealeControl(){
+void landDroneAndRealeControl()
+{
     landing(api, flight, 10u);
     releaseControl(api);
 }
 
-
 /***********************************************************************
  * Threads
  **********************************************************************/
-void startAllThreads(){
+void startAllThreads()
+{
     endFlag = 0;
     pRadioScanningThread = new std::thread(radioScanning_thread, 1);
     while (!usrpInitializedFlag) {
@@ -163,7 +163,8 @@ void startAllThreads(){
     pSafetyMonitorThread = new std::thread(safetyMonitor_thread, api, flight);
 }
 
-void stopAllThreads(){
+void stopAllThreads()
+{
     endFlag = 1;
 
     if (pRadioScanningThread != nullptr) {
@@ -173,7 +174,7 @@ void stopAllThreads(){
     if (pDataToFileThread != nullptr) {
         pDataToFileThread->join();
     }
-    
+
     if (pSafetyMonitorThread != nullptr) {
         pSafetyMonitorThread->join();
     }
