@@ -87,14 +87,15 @@ int main(int argc, char const* argv[])
         return ERROR_STATUS;
     }
 
+    /* Start all threads */
+    startAllThreads();
+
+#ifdef ENABLE_DRONE
     /* Take-off */
     int takeoffStatus = initDroneAndTakeoff();
     if (takeoffStatus != SUCCESS_STATUS) {
         return ERROR_STATUS;
     }
-
-    /* Start all threads */
-    startAllThreads();
 
     if (!strcmp(argv[1], "square")) {
         routineSquare(api, flight);
@@ -108,6 +109,10 @@ int main(int argc, char const* argv[])
 
     /* Drone landing */
     landDroneAndRealeControl();
+#else
+    while (true) {
+    }
+#endif // ENABLE_DRONE
 
     /* Stopping all threads */
     stopAllThreads();
@@ -220,11 +225,19 @@ void turnAndMoveForward(CoreAPI* api,
 void startAllThreads()
 {
     endFlag = 0;
+#ifdef ENABLE_USRP
     pRadioScanningThread = new std::thread(radioScanning_thread, 1);
     while (!usrpInitializedFlag) {
     }
+#endif // ENABLE_USRP
+
+#ifdef ENABLE_DATA
     pDataToFileThread = new std::thread(dataToFile_thread, flight);
+#endif // ENABLE_DATA
+
+#ifdef ENABLE_SAFETY
     pSafetyMonitorThread = new std::thread(safetyMonitor_thread, api, flight);
+#endif // ENABLE_SAFETY    
 }
 
 void stopAllThreads()
