@@ -9,7 +9,7 @@
 
 /*DJI Linux Application Headers */
 #include "LinuxCleanup.h"
-#include "LinuxFlight.h"
+#include "LinuxFlight.h" // @TODO drop this ?
 #include "LinuxSerialDevice.h"
 #include "LinuxSetup.h"
 #include "ReadUserConfig.h"
@@ -19,6 +19,7 @@
 
 /* @TODO Manage includes */
 #include "radio.hpp"
+#include "flightUtils.hpp"
 #include "utils.hpp"
 #include "config.hpp"
 
@@ -28,10 +29,13 @@ using namespace DJI::onboardSDK;
 /* Prototype */
 int routineSquare(CoreAPI*, Flight*);
 int routineLocate(CoreAPI*, Flight*);
+float getAoA_byTurning();
+
 /**
  * @brief Thread function for making the drone rotate.
  *
- *  The given DJI command is blocking hence the Thread.
+ *  The given DJI command for yaw velocity control is blocking and need to be
+ * executed inside a Thread.
  *
  * @param[in]   api
  *              DJI core API.
@@ -46,6 +50,10 @@ void stopAllThreads();
 void startAllThreads();
 int initDroneAndTakeoff();
 void landDroneAndRealeControl();
+void turnAndMoveForward(CoreAPI* api,
+                        Flight* flight,
+                        float absoluteYaw,
+                        float stepInM);
 
 /* @TODO shitty stuff that need to go! */
 // Those are declared in main.cpp
@@ -66,6 +74,8 @@ static Flight* flight;
 std::thread* pRadioScanningThread = nullptr;
 std::thread* pDataToFileThread = nullptr;
 std::thread* pSafetyMonitorThread = nullptr;
+
+float ANTENNA_OFFSETS[4] = {OFFSET_RF1, OFFSET_RF2, OFFSET_RF3, OFFSET_RF4};
 
 int main(int argc, char const* argv[])
 {
@@ -150,6 +160,60 @@ void landDroneAndRealeControl()
     releaseControl(api);
 }
 
+void turnAndMoveForward(CoreAPI* api,
+                        Flight* flight,
+                        float absoluteYaw, /* @TODO is it absolute ? */
+                        float stepInM)
+{
+    int ROTATION_TIMEOUT = 10000;
+    int MOVE_TIMEOUT = 30000;
+    int STABILIZATION_TIMEOUT = 3000;
+
+    float YAW_THRESHOLD_DEG = 3.0f;
+    float POS_THRESHOLD = 30.0f; /* in cm */
+    float YAW_VEL_THRESHOLD = 2.0f; /* in deg/s */
+    float POS_VEL_THRESHOLD = 0.3f; /* in m/s */
+
+    /* Rotation */
+    std::cout << "Rotation...";
+    moveByPositionOffset_modified(api,
+                                  flight,
+                                  0.f,
+                                  0.f,
+                                  0.f,
+                                  rad2deg(absoluteYaw),
+                                  ROTATION_TIMEOUT,
+                                  YAW_THRESHOLD_DEG,
+                                  POS_THRESHOLD);
+    std::cout << "ok" << std::endl;
+
+    /* Move forward */
+    std::cout << "Fly forward...";
+    moveByPositionOffset_modified(api,
+                                  flight,
+                                  stepInM * cos(absoluteYaw),
+                                  stepInM * sin(absoluteYaw),
+                                  0.f,
+                                  rad2deg(absoluteYaw),
+                                  MOVE_TIMEOUT,
+                                  YAW_THRESHOLD_DEG,
+                                  POS_THRESHOLD);
+    std::cout << "ok" << std::endl;
+
+    /* Stabilization */
+    std::cout << "Stabilization...";
+    moveWithVelocity_modified(api,
+                              flight,
+                              0,
+                              0,
+                              0,
+                              0,
+                              STABILIZATION_TIMEOUT,
+                              YAW_VEL_THRESHOLD,
+                              POS_VEL_THRESHOLD);
+    std::cout << "ok" << std::endl;
+}
+
 /***********************************************************************
  * Threads
  **********************************************************************/
@@ -182,10 +246,22 @@ void stopAllThreads()
 
 void droneRotation_thread(CoreAPI* api, Flight* flight)
 {
-    float angularSpeed = 5;
+    int timeout = 3000; /* @TODO change back to 3000 ? */
+    float angularSpeed = 5.0f; /* @TODO change back to 5 */
+    
+    float YAW_VEL_THRESHOLD = 2.0f; /* in deg/s */
+    float POS_VEL_THRESHOLD = 0.3f; /* in m/s */
+
     while (turnFlag) {
-        int status1 =
-            moveWithVelocity(api, flight, 0, 0, 0, angularSpeed, 1500, 3, 0.1);
+        moveWithVelocity_modified(api,
+                                  flight,
+                                  0,
+                                  0,
+                                  0,
+                                  angularSpeed,
+                                  timeout,
+                                  YAW_VEL_THRESHOLD,
+                                  POS_VEL_THRESHOLD);
     }
 }
 
@@ -211,13 +287,13 @@ void dataToFile_thread(Flight* flight)
         pos = flight -> getPosition();
         yaw = flight -> getYaw();     // IN RAD !
 
-        outfile <<  pos.latitude    << ","
-                <<  pos.longitude   << ","
-                <<  pos.altitude    << ","
-                <<  pos.height      << ","
-                <<  yaw             << ","
-                <<  switchState     << ","
-                <<  radioMeasure.average  << std::endl;
+        outfile <<  pos.latitude             << ","
+                <<  pos.longitude            << ","
+                <<  pos.altitude             << ","
+                <<  pos.height               << ","
+                <<  yaw                      << ","
+                <<  radioMeasure.switchState << ","
+                <<  radioMeasure.average     << std::endl;
     }
     
     if(data_amount > data_threshold)
@@ -281,59 +357,68 @@ int routineSquare(CoreAPI* api, Flight* flight)
     int waitingTime = 2000; // ms
 
     /* Square routine */
-    moveByPositionOffset(api, flight, 0, 0, altitude, 0);
-    moveWithVelocity(api, flight, 0, 0, 0, 0, waitingTime, 0, 0);
+    moveByPositionOffset_modified(api, flight, 0, 0, altitude, 0);
+    moveWithVelocity_modified(api, flight, 0, 0, 0, 0, waitingTime, 0, 0);
 
-    moveByPositionOffset(api, flight, 0, side, 0, 0);
-    moveWithVelocity(api, flight, 0, 0, 0, 0, waitingTime, 0, 0);
+    moveByPositionOffset_modified(api, flight, 0, side, 0, 0);
+    moveWithVelocity_modified(api, flight, 0, 0, 0, 0, waitingTime, 0, 0);
 
-    moveByPositionOffset(api, flight, side, 0, 0, 0);
-    moveWithVelocity(api, flight, 0, 0, 0, 0, waitingTime, 0, 0);
+    moveByPositionOffset_modified(api, flight, side, 0, 0, 0);
+    moveWithVelocity_modified(api, flight, 0, 0, 0, 0, waitingTime, 0, 0);
 
-    moveByPositionOffset(api, flight, 0, -side, 0, 0);
-    moveWithVelocity(api, flight, 0, 0, 0, 0, waitingTime, 0, 0);
+    moveByPositionOffset_modified(api, flight, 0, -side, 0, 0);
+    moveWithVelocity_modified(api, flight, 0, 0, 0, 0, waitingTime, 0, 0);
 
-    moveByPositionOffset(api, flight, -side, 0, 0, 0);
-    moveWithVelocity(api, flight, 0, 0, 0, 0, waitingTime, 0, 0);
+    moveByPositionOffset_modified(api, flight, -side, 0, 0, 0);
+    moveWithVelocity_modified(api, flight, 0, 0, 0, 0, waitingTime, 0, 0);
 }
 
 int routineLocate(CoreAPI* api, Flight* flight)
 {
     float STEP = 10u;  /* in m */
-    
-    // @TODO check that
-    float ANTENNA_OFFSETS[4] = {
-        OFFSET_RF1,
-        OFFSET_RF2,
-        OFFSET_RF3,
-        OFFSET_RF4};
+
+    while(true){
+
+        float absoluteFinalYaw = getAoA_byTurning();
+
+        std::cout << "Going in direction: " << rad2deg(absoluteFinalYaw) << std::endl;
+        std::cout << "Approved ? (y/n): ";
+        char answer;
+        std::cin >> answer;
+        
+        if (answer == 'y') {
+            turnAndMoveForward(api, flight, absoluteFinalYaw, STEP);
+        }
+        else {
+            break;
+        }
+    }
+}
+
+float getAoA_byTurning()
+{
 
     float initialYaw = normalizedAngle(flight->getYaw());
     float currentYaw = initialYaw;
     float previousYaw = initialYaw;
-    
+
     Radio_data_s bestRadio;
-    // float bestRadioVal = -1;
-    // int bestSwitchState;
+
     float bestYaw;
 
     float offset = 0.0;
 
-    // Need to do the "turn" command in a separate thread because it is
-    // blocking
     turnFlag = 1;
     std::thread turnThread(droneRotation_thread, api, flight);
 
     while (offset <= std::abs(deg2rad(90.f))) {
-        
         currentYaw = normalizedAngle(flight->getYaw());
         offset += angularSubstraction(currentYaw, previousYaw);
 
-        // float currentRadioVal = radioMeasure.average;
-        // int currentSwitchState = radioMeasure.switchState;
         Radio_data_s radioMeasure_cpy = radioMeasure;
 
-        if (radioMeasure_cpy.average > bestRadio.average && radioMeasure_cpy.average < 10) {
+        if (radioMeasure_cpy.average > bestRadio.average
+            && radioMeasure_cpy.average < 10) {
             bestRadio = radioMeasure_cpy;
             bestYaw = currentYaw;
         }
@@ -343,26 +428,16 @@ int routineLocate(CoreAPI* api, Flight* flight)
 
     turnFlag = 0;
     turnThread.join();
-    
-    float finalYaw = bestYaw + ANTENNA_OFFSETS[bestRadio.switchState];
+
+    float absoluteFinalYaw = bestYaw + ANTENNA_OFFSETS[bestRadio.switchState];
 
     std::cout << "Tour is done !" << std::endl;
-    std::cout << "Best yaw was " << rad2deg(bestYaw)
+    std::cout << "Best absolute yaw was " << rad2deg(bestYaw)
               << " with a radio value of " << bestRadio.average << std::endl;
     std::cout << "The corresponding switch state was " << bestRadio.switchState
+              << std::endl
               << std::endl;
-    std::cout << "Going in direction: " << rad2deg(finalYaw) << std::endl;
 
-    // Head in the computed direction
-    int status1 = moveByPositionOffset(api,
-                                       flight,
-                                       STEP * cos(finalYaw),
-                                       STEP * sin(finalYaw),
-                                       0.f,
-                                       rad2deg(finalYaw), // WARNING deg !!
-                                       30000u,
-                                       3.f,
-                                       30.f);
-    moveWithVelocity(api, flight, 0, 0, 0, 0, 2000u, 0, 0);
+    return absoluteFinalYaw;
 }
 
