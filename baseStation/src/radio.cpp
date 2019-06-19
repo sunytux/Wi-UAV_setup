@@ -11,6 +11,7 @@
 #include <signal.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <mutex>
 
 /* UHD Library Headers */
 #include <uhd/exception.hpp>
@@ -27,7 +28,6 @@
 #include "switch.hpp"
 #include "utils.hpp"
 #include "config.hpp"
-
 static bool stop_signal_called = false;
 void sig_int_handler(int)
 {
@@ -41,6 +41,10 @@ Radio_data_s radioMeasure;
 extern int switchState;
 bool current_freq = 0;
 bool usrpInitializedFlag = false;
+
+float FREQ_USERS[2] = {FREQ_USER1, FREQ_USER2};
+
+std::mutex radioMutex;
 
 int RadioRXStream1()
 {
@@ -64,39 +68,86 @@ int RadioRXStream1()
     initSwitch();
 
     while (!endFlag) {
-        stream_cmd.time_spec = uhd::time_spec_t(seconds_in_future);
-        rx_stream->issue_stream_cmd(stream_cmd);
+        for (int userIdx = 0; userIdx < N_USERS; ++userIdx) {
+            /* Adapt user frequency */
+            uhd::tune_request_t tune_request(FREQ_USERS[userIdx]);
+            usrp->set_rx_freq(tune_request);
 
-        float avg = 0.0f;
-        size_t accumulatedSamples = 0u;
-
-        while (accumulatedSamples < MAX_RECORDED_SAMPLES) {
-            uhd::rx_metadata_t md;
-            size_t receivedSamples = rx_stream->recv(
-                &buff.front(), buff.size(), md, MEASURE_PERIOD, true);
-
-            if (receivedSamples > 0u) {
-                for (int j = 0u; j < buff.size(); j++) {
-                    avg = avg + abs(buff[j]);
+            for (int antIdx = 0; antIdx < N_ANTENNAS; ++antIdx) {
+               double  now = usrp->get_time_now().get_real_secs();
+                if (now > seconds_in_future)
+                {
+                    printf("MEASURE_PERIOD is too small! Difference is %f\n",
+                           now - seconds_in_future);
+                    seconds_in_future = now + MEASURE_PERIOD;
                 }
-                avg = avg / buff.size();
+                stream_cmd.time_spec = uhd::time_spec_t(seconds_in_future);
+                rx_stream->issue_stream_cmd(stream_cmd);
 
-                radioMeasure.average = avg;
-                radioMeasure.switchState = switchState;
+                float avg = 0.0f;
+                size_t accumulatedSamples = 0u;
 
-                /* Error handling */
-                if (md.error_code != uhd::rx_metadata_t::ERROR_CODE_NONE) {
-                    throw std::runtime_error(str(
-                        boost::format("Receiver error %s") % md.strerror()));
+                while (accumulatedSamples < MAX_RECORDED_SAMPLES) {
+                    uhd::rx_metadata_t md;
+                    size_t receivedSamples = rx_stream->recv(
+                        &buff.front(), buff.size(), md, MEASURE_PERIOD, true);
+
+                    if (receivedSamples > 0u) {
+                        for (int j = 0u; j < buff.size(); j++) {
+                            avg = avg + abs(buff[j]);
+                        }
+                        avg = avg / buff.size();
+                        
+                        radioMutex.lock();
+                        radioMeasure.average = avg;
+                        radioMeasure.switchState = switchState;
+                        radioMeasure.user = userIdx;
+                        radioMutex.unlock();
+
+                        /* Error handling */
+                        if (md.error_code
+                            != uhd::rx_metadata_t::ERROR_CODE_NONE) {
+                            throw std::runtime_error(
+                                str(boost::format("Receiver error %s")
+                                    % md.strerror()));
+                        }
+
+                        accumulatedSamples += receivedSamples;
+                    }
                 }
 
-                accumulatedSamples += receivedSamples;
+                seconds_in_future = seconds_in_future + MEASURE_PERIOD;
+
+                switchNextAntenna();
             }
         }
+    }
+}
 
-        seconds_in_future = seconds_in_future + MEASURE_PERIOD;
+Radio_data_s getCurrentRadioMeasure(){
+    Radio_data_s radioMeasure_cpy;
 
-        switchNextAntenna();
+    radioMutex.lock();
+
+    radioMeasure_cpy.average = radioMeasure.average;
+    radioMeasure_cpy.switchState = radioMeasure.switchState;
+    radioMeasure_cpy.user = radioMeasure.user;
+
+    radioMutex.unlock();
+    
+    return radioMeasure_cpy;
+}
+
+void scanAllUsers(std::vector<User_rss_s>& usersRss)
+{
+    for (int i = 0; i < N_USERS * N_ANTENNAS; i++) {
+        Radio_data_s rMeasure = getCurrentRadioMeasure();
+
+        usersRss[rMeasure.user].user = rMeasure.user;
+        usersRss[rMeasure.user].rss[rMeasure.switchState] =
+            rMeasure.average;
+
+        usleep(MEASURE_PERIOD * S);
     }
 }
 
@@ -109,7 +160,7 @@ uhd::usrp::multi_usrp::sptr initUsrp(std::string addr)
     uhd::usrp::multi_usrp::sptr usrp = uhd::usrp::multi_usrp::make(addr);
     usrp->set_rx_rate(RX_DAC_RATE);
     usrp->set_time_now(uhd::time_spec_t(0.0));
-    uhd::tune_request_t tune_request(CARRIER_FREQ);
+    uhd::tune_request_t tune_request(FREQ_USER1);
     usrp->set_rx_freq(tune_request);
     usrp->set_rx_bandwidth(BANDWIDTH);
     usrp->set_rx_antenna(SDR_ANTENNA);

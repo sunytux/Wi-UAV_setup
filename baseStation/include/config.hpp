@@ -6,14 +6,22 @@
 // #define CONFIG_DEPLOY
 // #define CONFIG_DEV_DRONE
 #define CONFIG_DEV_USRP
+
+/* Antennas */
+#define N_ANTENNAS (4u)
 #define OFFSET_RF1 deg2rad(180.f)
 #define OFFSET_RF2 deg2rad(-90.f)
 #define OFFSET_RF3 deg2rad(0.f)
 #define OFFSET_RF4 deg2rad(90.f)
 
+/* Users */
+#define N_USERS (2u)
+#define FREQ_USER1 (2e9)
+#define FREQ_USER2 (2.1e9)
+
 /* Radio */
-#define MEASURE_PERIOD (0.05f) /* in seconds */
-#define CARRIER_FREQ (2e9)
+// #define MEASURE_PERIOD (0.05f) /* in seconds */
+#define MEASURE_PERIOD (0.2f) /* in seconds */
 #define SDR_ANTENNA ("TX/RX")
 #define RX_GAIN (0u)               /* in dB */
 #define RX_DAC_RATE (100e6 / 16.f) /* rate of the DAC */
@@ -24,11 +32,11 @@
 /* Safety */
 #define VOLICTY_THRESHOLD (3.f) /* in m/s */
 #define ALTITUDE_THRESHOLD (4.f) /* in meters */
-#define SAFETY_THREAD_PERIOD (100u * MS)
+#define SAFETY_THREAD_PERIOD (100u) /* in ms */
 
 /* Data record */
 #define DATA_FILE ("out.csv")
-#define DATA_THREAD_PERIOD (25 * MS)
+#define DATA_THREAD_PERIOD (MEASURE_PERIOD * MS) /* in ms */
 
 /* Configuration mode */
 #ifdef CONFIG_DEPLOY

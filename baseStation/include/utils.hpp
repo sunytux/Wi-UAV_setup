@@ -5,7 +5,8 @@
 #ifndef UTILS_HPP
 #define UTILS_HPP
 
-#define MS (1000u)
+#define MS (1e3)
+#define S  (1e6)
 
 #define PI (3.14159265359f)
 #define deg2rad(x) (((x) *PI) / 180.f)

@@ -110,7 +110,22 @@ int main(int argc, char const* argv[])
     /* Drone landing */
     landDroneAndRealeControl();
 #else
+    std::vector<User_rss_s> usersRss(N_USERS);
     while (true) {
+
+        scanAllUsers(usersRss);
+        printf("user: %d - ant: %d - rss: %f\n", usersRss[0].user, 0, usersRss[0].rss[0]);
+        printf("user: %d - ant: %d - rss: %f\n", usersRss[0].user, 1, usersRss[0].rss[1]);
+        printf("user: %d - ant: %d - rss: %f\n", usersRss[0].user, 2, usersRss[0].rss[2]);
+        printf("user: %d - ant: %d - rss: %f\n", usersRss[0].user, 3, usersRss[0].rss[3]);
+
+        printf("user: %d - ant: %d - rss: %f\n", usersRss[1].user, 0, usersRss[1].rss[0]);
+        printf("user: %d - ant: %d - rss: %f\n", usersRss[1].user, 1, usersRss[1].rss[1]);
+        printf("user: %d - ant: %d - rss: %f\n", usersRss[1].user, 2, usersRss[1].rss[2]);
+        printf("user: %d - ant: %d - rss: %f\n", usersRss[1].user, 3, usersRss[1].rss[3]);
+        printf("\n\n");
+        
+        usleep(2 * S);
     }
 #endif // ENABLE_DRONE
 
@@ -151,7 +166,7 @@ int initDroneAndTakeoff()
     unsigned short broadcastAck =
         api->setBroadcastFreqDefaults(blockingTimeout);
     if (broadcastAck != ACK_SUCCESS) {
-        std::cout << "Unable to set Broadcast Freqencies" << std::endl;
+        std::cout << "Unable to set Broadcast Frequencies" << std::endl;
         std::cout << "Exiting now." << std::endl;
         return ERROR_STATUS;
     }
@@ -226,6 +241,7 @@ void startAllThreads()
 {
     endFlag = 0;
 #ifdef ENABLE_USRP
+    /* @TODO remove radioScanning config arg, it's bullshit */
     pRadioScanningThread = new std::thread(radioScanning_thread, 1);
     while (!usrpInitializedFlag) {
     }
@@ -280,13 +296,13 @@ void droneRotation_thread(CoreAPI* api, Flight* flight)
 
 void dataToFile_thread(Flight* flight)
 {
-    std::ofstream outfile;
+       std::ofstream outfile;
     outfile.open(DATA_FILE, std::ios::out);
     // Change precision of floats to print
     outfile.precision(10);
     outfile.setf(std::ios::fixed);
     outfile.setf(std::ios::showpoint);   
-    outfile << "Latitude, Longitude, Altitude, Height, Yaw, SwitchState, RadioValue" << std::endl;
+    outfile << "Latitude, Longitude, Altitude, Height, Yaw, User, SwitchState, RadioValue" << std::endl;
 
     PositionData pos;
     float yaw;
@@ -296,7 +312,7 @@ void dataToFile_thread(Flight* flight)
     while(!endFlag && data_amount < data_threshold)
     {
     data_amount++;
-        usleep(DATA_THREAD_PERIOD);
+        usleep(DATA_THREAD_PERIOD * MS);
         pos = flight -> getPosition();
         yaw = flight -> getYaw();     // IN RAD !
 
@@ -305,6 +321,7 @@ void dataToFile_thread(Flight* flight)
                 <<  pos.altitude             << ","
                 <<  pos.height               << ","
                 <<  yaw                      << ","
+                <<  radioMeasure.user        << ","
                 <<  radioMeasure.switchState << ","
                 <<  radioMeasure.average     << std::endl;
     }
@@ -327,7 +344,7 @@ void radioScanning_thread(int config)
     }
     case 2: {
         std::cout << "Going for radio2" << std::endl;
-        // int status2 = RadioRXStream2(argc, argv);
+        // int status2 = RadioRXStream2();
         break;
     }
     }
@@ -336,7 +353,7 @@ void radioScanning_thread(int config)
 void safetyMonitor_thread(CoreAPI* api, Flight* flight)
 {
     while (!endFlag) {
-        usleep(SAFETY_THREAD_PERIOD);
+        usleep(SAFETY_THREAD_PERIOD * MS);
         VelocityData curVelocity = api->getBroadcastData().v;
         PositionData pos = flight->getPosition();
 
