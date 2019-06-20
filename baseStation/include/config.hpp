@@ -3,9 +3,9 @@
 
 #include "utils.hpp"
 
-// #define CONFIG_DEPLOY
+#define CONFIG_DEPLOY
 // #define CONFIG_DEV_DRONE
-#define CONFIG_DEV_USRP
+// #define CONFIG_DEV_USRP
 
 /* Antennas */
 #define N_ANTENNAS (4u)
@@ -41,14 +41,12 @@
 /* Configuration mode */
 #ifdef CONFIG_DEPLOY
 #define ENABLE_DRONE
-#define ENABLE_SAFETY
-#define ENABLE_USRP
 #define ENABLE_DATA
+#define ENABLE_USRP
 #endif // CONFIG_DEPLOY
 
 #ifdef CONFIG_DEV_DRONE
 #define ENABLE_DRONE
-#define ENABLE_SAFETY
 #endif // CONFIG_DEV_DRONE
 
 #ifdef CONFIG_DEV_USRP

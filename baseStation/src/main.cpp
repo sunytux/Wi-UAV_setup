@@ -47,7 +47,6 @@ void safetyMonitor_thread(CoreAPI* api, Flight* flight);
 void dataToFile_thread(Flight* flight);
 void radioScanning_thread(int config);
 void stopAllThreads();
-void startAllThreads();
 int initDroneAndTakeoff();
 void landDroneAndRealeControl();
 void turnAndMoveForward(CoreAPI* api,
@@ -55,15 +54,9 @@ void turnAndMoveForward(CoreAPI* api,
                         float absoluteYaw,
                         float stepInM);
 
-/* @TODO shitty stuff that need to go! */
-// Those are declared in main.cpp
-// extern float measureFromRadioF1;
-// extern float measureFromRadioF2;
-extern Radio_data_s radioMeasure;
-extern int switchState;
-
-bool endFlag;
-bool turnFlag;
+/* @TODO Consider semaphore ? */
+bool endFlag = false;
+bool turnFlag = false;
 extern bool usrpInitializedFlag;
 
 /* @TODO make it not global. */ 
@@ -87,15 +80,32 @@ int main(int argc, char const* argv[])
         return ERROR_STATUS;
     }
 
-    /* Start all threads */
-    startAllThreads();
+    /* Start USRP*/
+    #ifdef ENABLE_USRP
+    /* @TODO remove radioScanning config arg, it's bullshit */
+    pRadioScanningThread = new std::thread(radioScanning_thread, 1);
+    while (!usrpInitializedFlag) {
+    }
+    #endif // ENABLE_USRP
 
-#ifdef ENABLE_DRONE
     /* Take-off */
+    #ifdef ENABLE_DRONE
     int takeoffStatus = initDroneAndTakeoff();
     if (takeoffStatus != SUCCESS_STATUS) {
+        std::cout << "Unable to take-off" << std::endl
+                  << "Exiting now." << std::endl;
         return ERROR_STATUS;
     }
+    #endif // ENABLE_DRONE
+    
+    /* Start threads */
+    #ifdef ENABLE_DATA
+    pDataToFileThread = new std::thread(dataToFile_thread, flight);
+    #endif // ENABLE_DATA
+    #ifdef ENABLE_DRONE
+    pSafetyMonitorThread = new std::thread(safetyMonitor_thread, api, flight);
+    #endif // ENABLE_DRONE    
+
 
     if (!strcmp(argv[1], "square")) {
         routineSquare(api, flight);
@@ -103,31 +113,19 @@ int main(int argc, char const* argv[])
     else if (!strcmp(argv[1], "locate")) {
         routineLocate(api, flight);
     }
+    else if (!strcmp(argv[1], "wait")) {
+        while (true) {
+            usleep(100 * MS);
+        }
+    }
     else {
         std::cout << "Unknown command" << std::endl;
     }
 
     /* Drone landing */
+    #ifdef ENABLE_DRONE
     landDroneAndRealeControl();
-#else
-    std::vector<User_rss_s> usersRss(N_USERS);
-    while (true) {
-
-        scanAllUsers(usersRss);
-        printf("user: %d - ant: %d - rss: %f\n", usersRss[0].user, 0, usersRss[0].rss[0]);
-        printf("user: %d - ant: %d - rss: %f\n", usersRss[0].user, 1, usersRss[0].rss[1]);
-        printf("user: %d - ant: %d - rss: %f\n", usersRss[0].user, 2, usersRss[0].rss[2]);
-        printf("user: %d - ant: %d - rss: %f\n", usersRss[0].user, 3, usersRss[0].rss[3]);
-
-        printf("user: %d - ant: %d - rss: %f\n", usersRss[1].user, 0, usersRss[1].rss[0]);
-        printf("user: %d - ant: %d - rss: %f\n", usersRss[1].user, 1, usersRss[1].rss[1]);
-        printf("user: %d - ant: %d - rss: %f\n", usersRss[1].user, 2, usersRss[1].rss[2]);
-        printf("user: %d - ant: %d - rss: %f\n", usersRss[1].user, 3, usersRss[1].rss[3]);
-        printf("\n\n");
-        
-        usleep(2 * S);
-    }
-#endif // ENABLE_DRONE
+    #endif // ENABLE_DRONE    
 
     /* Stopping all threads */
     stopAllThreads();
@@ -142,15 +140,14 @@ int initDroneAndTakeoff()
         new LinuxSerialDevice(UserConfig::deviceName, UserConfig::baudRate);
     api = new CoreAPI(serialDevice);
     flight = new Flight(api);
-
     LinuxThread read(api, 2);
+
     int setupStatus = setup(serialDevice, api, &read);
     if (setupStatus == -1) {
         std::cout << "Unable to setup drivers." << std::endl;
         std::cout << "Exiting now." << std::endl;
         return ERROR_STATUS;
     }
-
     /* Monitored Take-off */
     int blockingTimeout = 10; /* in seconds */
     /* Timeout for blocking API calls to wait for ack from aircraft. */
@@ -162,6 +159,7 @@ int initDroneAndTakeoff()
         std::cout << "Exiting now." << std::endl;
         return ERROR_STATUS;
     }
+
     /* @TODO Investigate why this needs to be done AFTER monitoredTakeOff. */
     unsigned short broadcastAck =
         api->setBroadcastFreqDefaults(blockingTimeout);
@@ -195,7 +193,6 @@ void turnAndMoveForward(CoreAPI* api,
     float POS_VEL_THRESHOLD = 0.3f; /* in m/s */
 
     /* Rotation */
-    std::cout << "Rotation...";
     moveByPositionOffset_modified(api,
                                   flight,
                                   0.f,
@@ -205,10 +202,8 @@ void turnAndMoveForward(CoreAPI* api,
                                   ROTATION_TIMEOUT,
                                   YAW_THRESHOLD_DEG,
                                   POS_THRESHOLD);
-    std::cout << "ok" << std::endl;
 
     /* Move forward */
-    std::cout << "Fly forward...";
     moveByPositionOffset_modified(api,
                                   flight,
                                   stepInM * cos(absoluteYaw),
@@ -218,10 +213,8 @@ void turnAndMoveForward(CoreAPI* api,
                                   MOVE_TIMEOUT,
                                   YAW_THRESHOLD_DEG,
                                   POS_THRESHOLD);
-    std::cout << "ok" << std::endl;
 
     /* Stabilization */
-    std::cout << "Stabilization...";
     moveWithVelocity_modified(api,
                               flight,
                               0,
@@ -231,31 +224,11 @@ void turnAndMoveForward(CoreAPI* api,
                               STABILIZATION_TIMEOUT,
                               YAW_VEL_THRESHOLD,
                               POS_VEL_THRESHOLD);
-    std::cout << "ok" << std::endl;
 }
 
 /***********************************************************************
  * Threads
  **********************************************************************/
-void startAllThreads()
-{
-    endFlag = 0;
-#ifdef ENABLE_USRP
-    /* @TODO remove radioScanning config arg, it's bullshit */
-    pRadioScanningThread = new std::thread(radioScanning_thread, 1);
-    while (!usrpInitializedFlag) {
-    }
-#endif // ENABLE_USRP
-
-#ifdef ENABLE_DATA
-    pDataToFileThread = new std::thread(dataToFile_thread, flight);
-#endif // ENABLE_DATA
-
-#ifdef ENABLE_SAFETY
-    pSafetyMonitorThread = new std::thread(safetyMonitor_thread, api, flight);
-#endif // ENABLE_SAFETY    
-}
-
 void stopAllThreads()
 {
     endFlag = 1;
@@ -296,7 +269,7 @@ void droneRotation_thread(CoreAPI* api, Flight* flight)
 
 void dataToFile_thread(Flight* flight)
 {
-       std::ofstream outfile;
+    std::ofstream outfile;
     outfile.open(DATA_FILE, std::ios::out);
     // Change precision of floats to print
     outfile.precision(10);
@@ -311,19 +284,30 @@ void dataToFile_thread(Flight* flight)
 
     while(!endFlag && data_amount < data_threshold)
     {
-    data_amount++;
-        usleep(DATA_THREAD_PERIOD * MS);
+        data_amount++;
+        Radio_data_s rMeasure = getCurrentRadioMeasure();
+        
+        #ifdef ENABLE_DRONE
         pos = flight -> getPosition();
-        yaw = flight -> getYaw();     // IN RAD !
+        yaw = flight -> getYaw();
+        #else
+        pos.longitude = 0.f;
+        pos.latitude = 0.f;
+        pos.height = 0.f;
+        yaw = 0.f;
+        #endif // ENABLE_DRONE
+
 
         outfile <<  pos.latitude             << ","
                 <<  pos.longitude            << ","
                 <<  pos.altitude             << ","
                 <<  pos.height               << ","
                 <<  yaw                      << ","
-                <<  radioMeasure.user        << ","
-                <<  radioMeasure.switchState << ","
-                <<  radioMeasure.average     << std::endl;
+                <<  rMeasure.user        << ","
+                <<  rMeasure.switchState << ","
+                <<  rMeasure.average     << std::endl;
+
+        usleep(DATA_THREAD_PERIOD * MS);
     }
     
     if(data_amount > data_threshold)
@@ -352,6 +336,9 @@ void radioScanning_thread(int config)
 
 void safetyMonitor_thread(CoreAPI* api, Flight* flight)
 {
+    VelocityData curVelocity;
+    PositionData pos;
+
     while (!endFlag) {
         usleep(SAFETY_THREAD_PERIOD * MS);
         VelocityData curVelocity = api->getBroadcastData().v;
@@ -445,11 +432,11 @@ float getAoA_byTurning()
         currentYaw = normalizedAngle(flight->getYaw());
         offset += angularSubstraction(currentYaw, previousYaw);
 
-        Radio_data_s radioMeasure_cpy = radioMeasure;
+        Radio_data_s rMeasure = getCurrentRadioMeasure();
 
-        if (radioMeasure_cpy.average > bestRadio.average
-            && radioMeasure_cpy.average < 10) {
-            bestRadio = radioMeasure_cpy;
+        if (rMeasure.average > bestRadio.average
+            && rMeasure.average < 10) {
+            bestRadio = rMeasure;
             bestYaw = currentYaw;
         }
         previousYaw = currentYaw;
