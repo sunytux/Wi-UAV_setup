@@ -3,9 +3,9 @@
 
 #include "utils.hpp"
 
-#define CONFIG_DEPLOY
+// #define CONFIG_DEPLOY
 // #define CONFIG_DEV_DRONE
-// #define CONFIG_DEV_USRP
+#define CONFIG_DEV_USRP
 
 /* Antennas */
 #define N_ANTENNAS (4u)
@@ -15,13 +15,13 @@
 #define OFFSET_RF4 deg2rad(90.f)
 
 /* Users */
-#define N_USERS (2u)
+#define N_USERS (1u)
 #define FREQ_USER1 (2e9)
 #define FREQ_USER2 (2.1e9)
 
 /* Radio */
 // #define MEASURE_PERIOD (0.05f) /* in seconds */
-#define MEASURE_PERIOD (0.2f) /* in seconds */
+#define MEASURE_PERIOD (0.1f) /* in seconds */
 #define SDR_ANTENNA ("TX/RX")
 #define RX_GAIN (0u)               /* in dB */
 #define RX_DAC_RATE (100e6 / 16.f) /* rate of the DAC */

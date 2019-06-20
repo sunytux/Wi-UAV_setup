@@ -69,9 +69,12 @@ int RadioRXStream1()
 
     while (!endFlag) {
         for (int userIdx = 0; userIdx < N_USERS; ++userIdx) {
+
             /* Adapt user frequency */
-            uhd::tune_request_t tune_request(FREQ_USERS[userIdx]);
-            usrp->set_rx_freq(tune_request);
+            if (N_USERS > 1) {
+                uhd::tune_request_t tune_request(FREQ_USERS[userIdx]);
+                usrp->set_rx_freq(tune_request);
+            }
 
             for (int antIdx = 0; antIdx < N_ANTENNAS; ++antIdx) {
                double  now = usrp->get_time_now().get_real_secs();

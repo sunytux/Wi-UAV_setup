@@ -30,6 +30,7 @@ using namespace DJI::onboardSDK;
 int routineSquare(CoreAPI*, Flight*);
 int routineLocate(CoreAPI*, Flight*);
 float getAoA_byTurning();
+float getAoA_weightedRss(int userIdx);
 
 /**
  * @brief Thread function for making the drone rotate.
@@ -115,6 +116,7 @@ int main(int argc, char const* argv[])
     }
     else if (!strcmp(argv[1], "wait")) {
         while (true) {
+            getAoA_weightedRss(0);
             usleep(100 * MS);
         }
     }
@@ -456,5 +458,49 @@ float getAoA_byTurning()
               << std::endl;
 
     return absoluteFinalYaw;
+}
+
+float getAoA_weightedRss(int userIdx){
+
+    std::vector<User_rss_s> usersRss(N_USERS);
+
+    printf("\n----------------------------\n");
+    #ifdef ENABLE_DRONE
+    float initialYaw = normalizedAngle(flight->getYaw());
+    #else
+    float initialYaw = 0;
+    #endif // ENABLE_DRONE
+
+    scanAllUsers(usersRss);
+    printRss(usersRss[userIdx].rss);
+
+    int idxMax1 = indexOfMaxElement(usersRss[userIdx].rss, N_ANTENNAS);
+    float phi1 = ANTENNA_OFFSETS[idxMax1];
+    float rss1 = usersRss[userIdx].rss[idxMax1];
+
+    usersRss[userIdx].rss[idxMax1] = MINUS_INF;
+    int idxMax2 = indexOfMaxElement(usersRss[userIdx].rss, N_ANTENNAS);
+    float phi2 = ANTENNA_OFFSETS[idxMax2];
+    float rss2 = usersRss[userIdx].rss[idxMax2];
+
+    if (std::max({phi1, phi2}) - std::min({phi1, phi2}) > deg2rad(180)) {
+        if (phi1 > phi2){
+            phi2 += deg2rad(360);
+        }else{
+            phi1 += deg2rad(360);
+        }
+    }
+
+    float relativeAngle = normalizedAngle((rss1 * phi1 + rss2 * phi2) / (rss1 + rss2));
+    float absoluteAngle = normalizedAngle(initialYaw + relativeAngle);
+
+    std::cout << "Max 1: " << idxMax1 << std::endl
+              << "Max 2: " << idxMax2 << std::endl
+              << "Relative angle: " << rad2deg(relativeAngle) << std::endl
+              << "absolute angle: " << rad2deg(absoluteAngle) << std::endl;
+    
+
+    printf("----------------------------\n");
+
 }
 
