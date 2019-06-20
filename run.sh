@@ -27,6 +27,7 @@ case "$1" in
                 --exclude 'build'\
         ;;
 
+
     "ssh-build" )
         ./$0 push # The script call itself to push the code on remote
         sshpass -p $PWD_UP2 \
@@ -39,6 +40,11 @@ case "$1" in
             ssh $USER_UP2@$IP_UP2 "cd ${REMOTE_DIR} && ./run.sh make"
         ;;
 
+    "ssh-run" )
+        ./$0 ssh-make # The script call itself to push the code on remote
+        sshpass -p $PWD_UP2 \
+            ssh $USER_UP2@$IP_UP2 "cd ${REMOTE_DIR}/build/bin && ./baseStation wait"
+        ;;
 
     *) echo >&2 "Invalid option: $@"; exit 1;;
 esac
