@@ -9,10 +9,10 @@
 
 /* Antennas */
 #define N_ANTENNAS (4u)
-#define OFFSET_RF1 deg2rad(180.f)
-#define OFFSET_RF2 deg2rad(-90.f)
-#define OFFSET_RF3 deg2rad(0.f)
-#define OFFSET_RF4 deg2rad(90.f)
+#define OFFSET_RF1 deg2rad(0.f)
+#define OFFSET_RF2 deg2rad(90.f)
+#define OFFSET_RF3 deg2rad(-90.f)
+#define OFFSET_RF4 deg2rad(180.f)
 
 /* Flight */
 #define FLIGHT_ALTITUDE (6.f)    /* in meters */
