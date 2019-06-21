@@ -43,7 +43,7 @@ case "$1" in
     "ssh-run" )
         ./$0 ssh-make # The script call itself to push the code on remote
         sshpass -p $PWD_UP2 \
-            ssh $USER_UP2@$IP_UP2 "cd ${REMOTE_DIR}/build/bin && ./baseStation wait"
+            ssh $USER_UP2@$IP_UP2 "cd ${REMOTE_DIR}/build/bin && ./baseStation locate wrss"
         ;;
 
     *) echo >&2 "Invalid option: $@"; exit 1;;

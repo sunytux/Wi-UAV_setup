@@ -42,13 +42,13 @@ double db2nat(double xDb)
 
 void printRss(float* rss)
 {
-    printf("           %d\n", 2);
-    printf("  -------------------\n");
-    printf("  |      %.1f      |\n", nat2db(rss[2]));
-    printf("%d | %.1f     %.1f | %d\n", 1, nat2db(rss[1]), nat2db(rss[3]), 3);
-    printf("  |      %.1f      |\n", nat2db(rss[0]));
-    printf("  -------------------\n");
-    printf("           %d\n", 0);
+    printf("         %.1f\n", nat2db(rss[2]));
+    printf("      -----------\n");
+    printf("      |    %d    |\n", 2);
+    printf("%.1f | %d     %d | %.1f\n", nat2db(rss[1]), 1, 3, nat2db(rss[3]));
+    printf("      |    %d    |\n", 0);
+    printf("      -----------\n");
+    printf("         %.1f\n", nat2db(rss[0]));
 }
 
 int indexOfMaxElement(float* list, int size)

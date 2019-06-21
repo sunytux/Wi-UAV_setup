@@ -27,8 +27,9 @@ using namespace DJI::onboardSDK;
 
 /* @TODO move that */
 /* Prototype */
+int routineTakeoff(CoreAPI*, Flight*);
 int routineSquare(CoreAPI*, Flight*);
-int routineLocate(CoreAPI*, Flight*);
+int routineLocate(CoreAPI*, Flight*, const char* locateMode);
 float getAoA_byTurning();
 float getAoA_weightedRss(int userIdx);
 
@@ -108,15 +109,16 @@ int main(int argc, char const* argv[])
     #endif // ENABLE_DRONE    
 
 
-    if (!strcmp(argv[1], "square")) {
+    if (!strcmp(argv[1], "take-off")) {
+        routineTakeoff(api, flight);
+    }if (!strcmp(argv[1], "square")) {
         routineSquare(api, flight);
     }
     else if (!strcmp(argv[1], "locate")) {
-        routineLocate(api, flight);
+        routineLocate(api, flight, argv[2]);
     }
-    else if (!strcmp(argv[1], "wait")) {
+    else if (!strcmp(argv[1], "manual")) {
         while (true) {
-            getAoA_weightedRss(0);
             usleep(100 * MS);
         }
     }
@@ -185,14 +187,6 @@ void turnAndMoveForward(CoreAPI* api,
                         float absoluteYaw, /* @TODO is it absolute ? */
                         float stepInM)
 {
-    int ROTATION_TIMEOUT = 10000;
-    int MOVE_TIMEOUT = 30000;
-    int STABILIZATION_TIMEOUT = 3000;
-
-    float YAW_THRESHOLD_DEG = 3.0f;
-    float POS_THRESHOLD = 30.0f; /* in cm */
-    float YAW_VEL_THRESHOLD = 2.0f; /* in deg/s */
-    float POS_VEL_THRESHOLD = 0.3f; /* in m/s */
 
     /* Rotation */
     moveByPositionOffset_modified(api,
@@ -202,8 +196,8 @@ void turnAndMoveForward(CoreAPI* api,
                                   0.f,
                                   rad2deg(absoluteYaw),
                                   ROTATION_TIMEOUT,
-                                  YAW_THRESHOLD_DEG,
-                                  POS_THRESHOLD);
+                                  YAW_THRESHOLD,
+                                  POSITION_THRESHOLD);
 
     /* Move forward */
     moveByPositionOffset_modified(api,
@@ -213,8 +207,8 @@ void turnAndMoveForward(CoreAPI* api,
                                   0.f,
                                   rad2deg(absoluteYaw),
                                   MOVE_TIMEOUT,
-                                  YAW_THRESHOLD_DEG,
-                                  POS_THRESHOLD);
+                                  YAW_THRESHOLD,
+                                  POSITION_THRESHOLD);
 
     /* Stabilization */
     moveWithVelocity_modified(api,
@@ -224,8 +218,8 @@ void turnAndMoveForward(CoreAPI* api,
                               0,
                               0,
                               STABILIZATION_TIMEOUT,
-                              YAW_VEL_THRESHOLD,
-                              POS_VEL_THRESHOLD);
+                              YAW_VELOCITY_THRESHOLD,
+                              POSITION_VELOCITY_THRESHOLD);
 }
 
 /***********************************************************************
@@ -253,9 +247,6 @@ void droneRotation_thread(CoreAPI* api, Flight* flight)
     int timeout = 3000; /* @TODO change back to 3000 ? */
     float angularSpeed = 5.0f; /* @TODO change back to 5 */
     
-    float YAW_VEL_THRESHOLD = 2.0f; /* in deg/s */
-    float POS_VEL_THRESHOLD = 0.3f; /* in m/s */
-
     while (turnFlag) {
         moveWithVelocity_modified(api,
                                   flight,
@@ -264,8 +255,8 @@ void droneRotation_thread(CoreAPI* api, Flight* flight)
                                   0,
                                   angularSpeed,
                                   timeout,
-                                  YAW_VEL_THRESHOLD,
-                                  POS_VEL_THRESHOLD);
+                                  YAW_VELOCITY_THRESHOLD,
+                                  POSITION_VELOCITY_THRESHOLD);
     }
 }
 
@@ -282,9 +273,8 @@ void dataToFile_thread(Flight* flight)
     PositionData pos;
     float yaw;
     int data_amount = 0;
-    int data_threshold = 5000;
 
-    while(!endFlag && data_amount < data_threshold)
+    while(!endFlag && data_amount < DATA_MAX_RECORDED_SAMPLE)
     {
         data_amount++;
         Radio_data_s rMeasure = getCurrentRadioMeasure();
@@ -312,7 +302,7 @@ void dataToFile_thread(Flight* flight)
         usleep(DATA_THREAD_PERIOD * MS);
     }
     
-    if(data_amount > data_threshold)
+    if(data_amount > DATA_MAX_RECORDED_SAMPLE)
     {
        std::cout << "Threshold exceeded, expect incomplete data." << std::endl;
     }
@@ -369,44 +359,65 @@ void safetyMonitor_thread(CoreAPI* api, Flight* flight)
 /***********************************************************************
  * Flight routines
  **********************************************************************/
+int routineTakeoff(CoreAPI* api, Flight* flight){
+    moveWithVelocity_modified(api, flight, 0, 0, 0, 0, STABILIZATION_TIMEOUT, 0, 0);
+}
 int routineSquare(CoreAPI* api, Flight* flight)
 {
-    int altitude = 6;
-    int side = 10;
-    int waitingTime = 2000; // ms
+    float altitudeCmd = FLIGHT_ALTITUDE - flight->getPosition().height;
 
-    /* Square routine */
-    moveByPositionOffset_modified(api, flight, 0, 0, altitude, 0);
-    moveWithVelocity_modified(api, flight, 0, 0, 0, 0, waitingTime, 0, 0);
+    moveByPositionOffset_modified(api, flight, 0, 0, altitudeCmd, 0);
+    moveWithVelocity_modified(api, flight, 0, 0, 0, 0, STABILIZATION_TIMEOUT, 0, 0);
 
-    moveByPositionOffset_modified(api, flight, 0, side, 0, 0);
-    moveWithVelocity_modified(api, flight, 0, 0, 0, 0, waitingTime, 0, 0);
+    moveByPositionOffset_modified(api, flight, 0, SQUARE_STEP, 0, 0);
+    moveWithVelocity_modified(api, flight, 0, 0, 0, 0, STABILIZATION_TIMEOUT, 0, 0);
 
-    moveByPositionOffset_modified(api, flight, side, 0, 0, 0);
-    moveWithVelocity_modified(api, flight, 0, 0, 0, 0, waitingTime, 0, 0);
+    moveByPositionOffset_modified(api, flight, SQUARE_STEP, 0, 0, 0);
+    moveWithVelocity_modified(api, flight, 0, 0, 0, 0, STABILIZATION_TIMEOUT, 0, 0);
 
-    moveByPositionOffset_modified(api, flight, 0, -side, 0, 0);
-    moveWithVelocity_modified(api, flight, 0, 0, 0, 0, waitingTime, 0, 0);
+    moveByPositionOffset_modified(api, flight, 0, -SQUARE_STEP, 0, 0);
+    moveWithVelocity_modified(api, flight, 0, 0, 0, 0, STABILIZATION_TIMEOUT, 0, 0);
 
-    moveByPositionOffset_modified(api, flight, -side, 0, 0, 0);
-    moveWithVelocity_modified(api, flight, 0, 0, 0, 0, waitingTime, 0, 0);
+    moveByPositionOffset_modified(api, flight, -SQUARE_STEP, 0, 0, 0);
+    moveWithVelocity_modified(api, flight, 0, 0, 0, 0, STABILIZATION_TIMEOUT, 0, 0);
 }
 
-int routineLocate(CoreAPI* api, Flight* flight)
-{
-    float STEP = 10u;  /* in m */
+int routineLocate(CoreAPI* api, Flight* flight, const char* locateMode)
+{   
+    char answer;
+    float altitudeCmd = FLIGHT_ALTITUDE - flight->getPosition().height;
+
+    moveByPositionOffset_modified(api, flight, 0, 0, altitudeCmd, 0);
+    moveWithVelocity_modified(api, flight, 0, 0, 0, 0, STABILIZATION_TIMEOUT, 0, 0);
 
     while(true){
+        float absoluteFinalYaw;
 
-        float absoluteFinalYaw = getAoA_byTurning();
+        std::cout << "\n\nStart scanning ? (y/n): ";
+        std::cin >> answer;
+        if (answer != 'y') {
+            break;
+        }
+        
+        if (!strcmp(locateMode, "turn")) {
+            absoluteFinalYaw = getAoA_byTurning();
+        }
+        else if (!strcmp(locateMode, "wrss")) {
+            absoluteFinalYaw = getAoA_weightedRss(0);
+        }else{
+            std::cout << "Unknown localization mode" << std::endl
+                      << "Exiting now." << std::endl;
+            break;
+        }
 
-        std::cout << "Going in direction: " << rad2deg(absoluteFinalYaw) << std::endl;
+        printf("Computed relative AoA; %.0f deg\n",
+            rad2deg(angularSubstraction(absoluteFinalYaw, flight->getYaw())));
+        printf("Going %.0fm in AoA direction\n", LOCALIZATION_STEP);
         std::cout << "Approved ? (y/n): ";
-        char answer;
         std::cin >> answer;
         
         if (answer == 'y') {
-            turnAndMoveForward(api, flight, absoluteFinalYaw, STEP);
+            turnAndMoveForward(api, flight, absoluteFinalYaw, LOCALIZATION_STEP);
         }
         else {
             break;
@@ -494,13 +505,11 @@ float getAoA_weightedRss(int userIdx){
     float relativeAngle = normalizedAngle((rss1 * phi1 + rss2 * phi2) / (rss1 + rss2));
     float absoluteAngle = normalizedAngle(initialYaw + relativeAngle);
 
-    std::cout << "Max 1: " << idxMax1 << std::endl
-              << "Max 2: " << idxMax2 << std::endl
-              << "Relative angle: " << rad2deg(relativeAngle) << std::endl
-              << "absolute angle: " << rad2deg(absoluteAngle) << std::endl;
+    printf("Relative angle: %.0f deg\n", rad2deg(relativeAngle));
+    printf("Absolute angle: %.0f deg\n", rad2deg(absoluteAngle));
     
-
     printf("----------------------------\n");
+    return absoluteAngle;
 
 }
 
