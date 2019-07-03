@@ -338,6 +338,9 @@ void safetyMonitor_thread(CoreAPI* api, Flight* flight)
         VelocityData curVelocity = api->getBroadcastData().v;
         PositionData pos = flight->getPosition();
 
+        pos.latitude;
+        pos.longitude;
+
         if (curVelocity.x > VOLICTY_THRESHOLD
             || curVelocity.y > VOLICTY_THRESHOLD
             || curVelocity.z > VOLICTY_THRESHOLD) {
@@ -355,6 +358,23 @@ void safetyMonitor_thread(CoreAPI* api, Flight* flight)
             ackReturnData releaseControlStatus = releaseControl(api);
             endFlag = 1;
         }
+
+        #ifdef ENABLE_SAFETY_BY_GPS
+        if (pos.latitude < MIN_LATITUDE
+            || pos.latitude > MAX_LATITUDE
+            || pos.longitude < MIN_LONGITUDE
+            || pos.longitude > MAX_LONGITUDE) {
+            
+            std::cout << "lat: " << pos.latitude << "    -    max: " << MIN_LATITUDE << std::endl;
+            std::cout << "lon: " << pos.longitude << "    -    max: " << MIN_LONGITUDE << std::endl;
+            
+            std::cout << "Drone outside of safety perimeter ! Emergency "
+                         "release of the control."
+                      << std::endl;
+            ackReturnData releaseControlStatus = releaseControl(api);
+            endFlag = 1;
+        }
+        #endif // ENABLE_SAFETY_BY_GPS
     }
 }
 

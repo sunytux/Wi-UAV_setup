@@ -4,7 +4,7 @@
 #include "utils.hpp"
 
 #define CONFIG_DEPLOY
-// #define CONFIG_DEV_DRONE
+#define CONFIG_DEV_DRONE
 // #define CONFIG_DEV_USRP
 
 /* Antennas */
@@ -30,9 +30,15 @@
 #define YAW_VELOCITY_THRESHOLD (2.f)       /* in deg/s */
 
 /* Safety */
+#define ENABLE_SAFETY_BY_GPS
 #define VOLICTY_THRESHOLD (3.f)     /* in m/s */
 #define ALTITUDE_THRESHOLD (10.f)   /* in meters */
 #define SAFETY_THREAD_PERIOD (100u) /* in ms */
+#define MIN_LATITUDE deg2rad(50.585413l)   /* @TODO this should be rad or deg ? */
+#define MIN_LONGITUDE deg2rad(4.351604l)   /* @TODO this should be rad or deg ? */
+#define MAX_LATITUDE deg2rad( 50.585927l)  /* @TODO this should be rad or deg ? */
+#define MAX_LONGITUDE deg2rad( 4.353289l)  /* @TODO this should be rad or deg ? */
+
 
 /* Users */
 #define N_USERS (1u)
