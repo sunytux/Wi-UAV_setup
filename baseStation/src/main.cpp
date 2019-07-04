@@ -6,6 +6,8 @@
 #include <limits>
 #include <algorithm>
 #include <fstream>
+#include <chrono>
+#include <ctime>
 
 /*DJI Linux Application Headers */
 #include "LinuxCleanup.h"
@@ -31,7 +33,7 @@ int routineTakeoff(CoreAPI*, Flight*);
 int routineSquare(CoreAPI*, Flight*);
 int routineLocate(CoreAPI*, Flight*, const char* locateMode);
 float getAoA_byTurning();
-float getAoA_weightedRss(int userIdx);
+float getAoA_weightedRss(int userIdx, std::ofstream* logFile=nullptr);
 
 /**
  * @brief Thread function for making the drone rotate.
@@ -387,6 +389,17 @@ int routineLocate(CoreAPI* api, Flight* flight, const char* locateMode)
     char answer;
     float altitudeCmd = FLIGHT_ALTITUDE - flight->getPosition().height;
 
+    char* fileName;
+    time_t now = time(0);
+    tm* now_tm = localtime(&now);
+    strftime(fileName, 50, "locate-log_%T.csv", now_tm);
+    std::ofstream locOutputFile;
+    locOutputFile.open(fileName, std::ios::out);
+    locOutputFile.precision(10);
+    locOutputFile.setf(std::ios::fixed);
+    locOutputFile.setf(std::ios::showpoint);   
+    locOutputFile << "Time,Latitude, Longitude, Altitude, Height, Yaw, Estimated AoA, rss0, rss1, rss2, rss3"  << std::endl;
+
     moveByPositionOffset_modified(api, flight, 0, 0, altitudeCmd, 0);
     moveWithVelocity_modified(api, flight, 0, 0, 0, 0, STABILIZATION_TIMEOUT, 0, 0);
 
@@ -403,7 +416,7 @@ int routineLocate(CoreAPI* api, Flight* flight, const char* locateMode)
             absoluteFinalYaw = getAoA_byTurning();
         }
         else if (!strcmp(locateMode, "wrss")) {
-            absoluteFinalYaw = getAoA_weightedRss(0);
+            absoluteFinalYaw = getAoA_weightedRss(0, &locOutputFile);
         }else{
             std::cout << "Unknown localization mode" << std::endl
                       << "Exiting now." << std::endl;
@@ -423,6 +436,8 @@ int routineLocate(CoreAPI* api, Flight* flight, const char* locateMode)
             break;
         }
     }
+    locOutputFile.close();
+
 }
 
 float getAoA_byTurning()
@@ -471,19 +486,32 @@ float getAoA_byTurning()
     return absoluteFinalYaw;
 }
 
-float getAoA_weightedRss(int userIdx){
+float getAoA_weightedRss(int userIdx, std::ofstream* logFile){
 
     std::vector<User_rss_s> usersRss(N_USERS);
+    PositionData pos;
+    float initialYaw;
 
     printf("\n----------------------------\n");
     #ifdef ENABLE_DRONE
-    float initialYaw = normalizedAngle(flight->getYaw());
+    pos = flight -> getPosition();
+    initialYaw = normalizedAngle(flight->getYaw());
     #else
-    float initialYaw = 0;
+    pos.latitude = 0.0f;
+    pos.longitude = 0.0f;
+    pos.altitude = 0.0f;
+    pos.height = 0.0f;
+    initialYaw = 0.0f;
     #endif // ENABLE_DRONE
 
     scanAllUsers(usersRss);
     printRss(usersRss[userIdx].rss);
+
+    /* @TODO clean that */
+    float rRss0 = usersRss[userIdx].rss[0];
+    float rRss1 = usersRss[userIdx].rss[1];
+    float rRss2 = usersRss[userIdx].rss[2];
+    float rRss3 = usersRss[userIdx].rss[3];
 
     int idxMax1 = indexOfMaxElement(usersRss[userIdx].rss, N_ANTENNAS);
     float phi1 = ANTENNA_OFFSETS[idxMax1];
@@ -509,7 +537,22 @@ float getAoA_weightedRss(int userIdx){
     printf("Absolute angle: %.0f deg\n", rad2deg(absoluteAngle));
     
     printf("----------------------------\n");
-    return absoluteAngle;
+
+   if (logFile != nullptr) {
+       *logFile << time(0) << ","
+            << pos.latitude << ","
+            << pos.longitude << ","
+            << pos.altitude << ","
+            << pos.height << ","
+            << initialYaw << ","
+            << absoluteAngle << ","
+            << rRss0 << ","
+            << rRss1 << ","
+            << rRss2 << ","
+            << rRss3 << std::endl;
+   }
+
+   return absoluteAngle;
 
 }
 
